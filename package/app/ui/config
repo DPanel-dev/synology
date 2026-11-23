@@ -1,0 +1,11 @@
+{
+  ".url": {
+    "com.dpanel.Application": {
+      "type": "url",
+      "title": "DPanel",
+      "icon": "images/icon.png",
+      "url": "3rdparty/dpanel/index.html",
+      "allUsers": false
+    }
+  }
+}

@@ -1,0 +1,1 @@
+../standards/projects/synology.md

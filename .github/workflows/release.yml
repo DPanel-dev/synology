@@ -1,0 +1,147 @@
+name: Build Synology SPK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'DPanel release tag (e.g. v1.11.3); build artifacts only'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spk-${{ github.event_name }}-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DPANEL_REPO: donknap/dpanel
+  DPANEL_TAG: ${{ inputs.version || github.ref_name }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check DSM templates and hooks
+        run: |
+          python3 tests/test_package.py -v
+          node tests/test-launcher.cjs
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download and validate DPanel binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$DPANEL_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)([.-]([0-9]+))?$ ]]; then
+            echo 'Expected vX.Y.Z, vX.Y.Z.N or vX.Y.Z-N.' >&2
+            exit 1
+          fi
+          echo "SPK_VERSION=${BASH_REMATCH[1]}-${BASH_REMATCH[3]:-0}" >> "$GITHUB_ENV"
+          gh release download "$DPANEL_TAG" --repo "$DPANEL_REPO" --dir upstream \
+            --pattern dpanel-synology-amd64 --pattern dpanel-synology-arm64
+          export LC_ALL=C
+          readelf -h upstream/dpanel-synology-amd64 > upstream/amd64.elf
+          readelf -h upstream/dpanel-synology-arm64 > upstream/arm64.elf
+          grep -Eq 'Machine: +Advanced Micro Devices X86-64$' upstream/amd64.elf
+          grep -Eq 'Machine: +AArch64$' upstream/arm64.elf
+
+      - name: Assemble and verify SPKs
+        run: |
+          mkdir -p dist
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT
+          export LC_ALL=C
+          archive_options=(--format=ustar --numeric-owner --owner=0 --group=0 --sort=name --mtime=@0)
+          for cpu in amd64 arm64; do
+            case "$cpu" in
+              amd64) dsm_arch=x86_64 ;;
+              arm64) dsm_arch=armv8 ;;
+            esac
+            stage="$work/$cpu"
+            mkdir -p "$stage/app" "$stage/spk"
+            cp -R package/app/. "$stage/app/"
+            install -Dm755 "upstream/dpanel-synology-$cpu" "$stage/app/server/dpanel"
+            cp -R package/conf package/scripts package/WIZARD_UIFILES package/PACKAGE_ICON*.PNG "$stage/spk/"
+            chmod 755 "$stage/spk/scripts/"{preinst,postinst,postuninst,start-stop-status}
+
+            tar "${archive_options[@]}" -czf "$stage/spk/package.tgz" -C "$stage/app" server ui
+            checksum=$(md5sum "$stage/spk/package.tgz" | cut -d ' ' -f 1)
+            sed -e "s/@VERSION@/$SPK_VERSION/g" -e "s/@ARCH@/$dsm_arch/g" \
+              -e "s/@CHECKSUM@/$checksum/g" package/INFO.in > "$stage/spk/INFO"
+
+            spk="dist/dpanel-$cpu.spk"
+            tar "${archive_options[@]}" -cf "$spk" -C "$stage/spk" \
+              INFO package.tgz scripts conf WIZARD_UIFILES PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
+            tar -tf "$spk" > "$stage/outer.txt"
+            tar -xOf "$spk" package.tgz | tar -tzf - > "$stage/inner.txt"
+            grep -Fx 'scripts/start-stop-status' "$stage/outer.txt"
+            grep -Fx 'conf/privilege' "$stage/outer.txt"
+            grep -Fx 'WIZARD_UIFILES/install_uifile' "$stage/outer.txt"
+            grep -Fx 'server/dpanel' "$stage/inner.txt"
+            grep -Fx 'ui/config' "$stage/inner.txt"
+            tar -xOf "$spk" INFO > "$stage/INFO.actual"
+            grep -Fx "arch=\"$dsm_arch\"" "$stage/INFO.actual"
+            grep -Fx "version=\"$SPK_VERSION\"" "$stage/INFO.actual"
+            grep -Fx "checksum=\"$checksum\"" "$stage/INFO.actual"
+            actual_checksum=$(tar -xOf "$spk" package.tgz | md5sum | cut -d ' ' -f 1)
+            test "$actual_checksum" = "$checksum"
+          done
+          (
+            cd dist
+            sha256sum dpanel-amd64.spk dpanel-arm64.spk > SHA256SUMS
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dpanel-synology-${{ env.DPANEL_TAG }}
+          path: |
+            dist/*.spk
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dpanel-synology-${{ env.DPANEL_TAG }}
+          path: dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          packages=(dist/dpanel-amd64.spk dist/dpanel-arm64.spk dist/SHA256SUMS)
+          if gh release view "$DPANEL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$DPANEL_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release view "$DPANEL_TAG" --repo "$DPANEL_REPO" --json body --jq .body > release-notes.md
+            gh release create "$DPANEL_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "DPanel $DPANEL_TAG for Synology DSM" --notes-file release-notes.md
+          fi

@@ -1,0 +1,12 @@
+#!/bin/sh
+. "$(dirname "$0")/common"
+
+if [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] && ! valid_port "${wizard_port:-8086}"; then
+    report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'
+    exit 1
+fi
+if [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] && ! valid_public_origin "${wizard_public_origin:-}"; then
+    report_error 'HTTPS 入口必须为 https://主机名[:端口]，不能包含路径。'
+    exit 1
+fi
+exit 0

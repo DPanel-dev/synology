@@ -1,0 +1,81 @@
+# Sourced by the DSM lifecycle hooks.
+PKG_VAR=${SYNOPKG_PKGVAR:-/var/packages/dpanel/var}
+PKG_DEST=${SYNOPKG_PKGDEST:-/var/packages/dpanel/target}
+case "$PKG_VAR" in
+    /*) [ "$PKG_VAR" != / ] || exit 1 ;;
+    *) exit 1 ;;
+esac
+STATE_DIR="$PKG_VAR/dpanel"
+CONFIG_FILE="$STATE_DIR/connection.conf"
+LOG_FILE="$STATE_DIR/run.log"
+PID_FILE="$STATE_DIR/server.pid"
+DPANEL_BIN="$PKG_DEST/server/dpanel"
+
+report_error() {
+    printf '%s\n' "$1" >&2
+    if [ -n "${SYNOPKG_TEMP_LOGFILE:-}" ]; then
+        printf '%s\n' "$1" >> "$SYNOPKG_TEMP_LOGFILE"
+    fi
+    return 1
+}
+
+valid_port() {
+    case "$1" in
+        [1-9][0-9][0-9][0-9]|[1-9][0-9][0-9][0-9][0-9])
+            [ "$1" -ge 1024 ] && [ "$1" -le 65535 ] ;;
+        *) return 1 ;;
+    esac
+}
+
+valid_public_origin() {
+    [ -z "$1" ] && return 0
+    # Only an HTTPS hostname (or IPv4 address) and optional numeric port.
+    # An allowlist also keeps the value safe in the generated JavaScript.
+    case "$1" in
+        https://*) authority=${1#https://} ;;
+        *) return 1 ;;
+    esac
+    case "$authority" in ''|*[!A-Za-z0-9.:-]*|*..*) return 1 ;; esac
+    name=${authority%%:*}
+    case "$name" in
+        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9]|*.-*|*-.*) return 1 ;;
+    esac
+    if [ "$authority" != "$name" ]; then
+        port=${authority#*:}
+        case "$port" in ''|0*|*[!0-9]*|??????*) return 1 ;; esac
+        [ "$port" -le 65535 ] || return 1
+    fi
+}
+
+read_config() {
+    PORT=8086
+    LAN=false
+    PUBLIC_ORIGIN=
+    if [ -f "$CONFIG_FILE" ]; then
+        {
+            IFS= read -r PORT && IFS= read -r LAN || return 1
+            IFS= read -r PUBLIC_ORIGIN || :  # Older configs have only two lines.
+        } < "$CONFIG_FILE"
+    fi
+    valid_port "$PORT" || return 1
+    case "$LAN" in true|false) ;; *) return 1 ;; esac
+    valid_public_origin "$PUBLIC_ORIGIN"
+}
+
+write_launcher_config() {
+    temp=$(mktemp "$PKG_DEST/ui/.connection.XXXXXX") || return 1
+    if printf 'window.dpanelConnection = { port: %s, direct: %s, publicOrigin: "%s" };\n' \
+        "$PORT" "$LAN" "$PUBLIC_ORIGIN" > "$temp" && chmod 644 "$temp" && \
+        mv -f -- "$temp" "$PKG_DEST/ui/connection.js"; then
+        return 0
+    fi
+    rm -f -- "$temp"
+    return 1
+}
+
+owned_pid() {
+    IFS= read -r pid < "$PID_FILE" || return 1
+    case "$pid" in ''|0*|1|*[!0-9]*) return 1 ;; esac
+    # Never signal a stale PID that has been reused by an unrelated service.
+    [ "/proc/$pid/exe" -ef "$DPANEL_BIN" ]
+}

@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+. "$(dirname "$0")/common"
+
+umask 077
+[ ! -L "$STATE_DIR" ] || report_error 'DPanel 数据目录不能是符号链接。'
+mkdir -p "$STATE_DIR"
+if [ ! -f "$CONFIG_FILE" ]; then
+    PORT=${wizard_port:-8086}
+    valid_port "$PORT" || report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'
+    LAN=false
+    [ "${wizard_listen_lan:-}" != true ] || LAN=true
+    PUBLIC_ORIGIN=${wizard_public_origin:-}
+    valid_public_origin "$PUBLIC_ORIGIN" || report_error 'DPanel 的 HTTPS 入口无效。'
+    settings=$(mktemp "$STATE_DIR/.connection.XXXXXX")
+    printf '%s\n%s\n%s\n' "$PORT" "$LAN" "$PUBLIC_ORIGIN" > "$settings"
+    mv -f -- "$settings" "$CONFIG_FILE"
+fi
+
+# The payload is replaced on upgrade; regenerate the launcher from persistent settings.
+read_config || report_error 'DPanel 的 connection.conf 无效。'
+write_launcher_config || report_error '无法更新 DPanel 的 DSM 桌面入口。'

@@ -1,0 +1,46 @@
+[
+  {
+    "step_title": "配置 DPanel",
+    "items": [
+      {
+        "type": "textfield",
+        "desc": "默认仅监听 NAS 本机。可通过 DSM 的 HTTPS 反向代理访问，首次访问时在 DPanel 中创建管理员。",
+        "subitems": [
+          {
+            "key": "wizard_port",
+            "desc": "DPanel HTTP 端口",
+            "defaultValue": "8086",
+            "validator": {
+              "allowBlank": false,
+              "regex": "^[1-9][0-9]{3,4}$",
+              "invalidText": "请输入 1024–65535 之间的端口。"
+            }
+          }
+        ]
+      },
+      {
+        "type": "textfield",
+        "desc": "可选：填写已配置的 HTTPS 反向代理入口，DSM 桌面就能直接打开 DPanel。此项不启用免登。",
+        "subitems": [
+          {
+            "key": "wizard_public_origin",
+            "desc": "HTTPS 入口，如 https://dpanel.example.com（不要填写路径）",
+            "defaultValue": "",
+            "validator": { "allowBlank": true }
+          }
+        ]
+      },
+      {
+        "type": "checkbox",
+        "desc": "仅在可信网络中开启直连。请通过 DSM 防火墙限制访问，不要将 HTTP 端口转发到公网。",
+        "subitems": [
+          {
+            "key": "wizard_listen_lan",
+            "desc": "允许通过 NAS 的 HTTP 端口直接访问",
+            "defaultValue": false
+          }
+        ]
+      }
+    ]
+  }
+]
