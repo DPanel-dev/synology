@@ -8,7 +8,7 @@ DPanel 社区版的群晖 `.spk` 套件。使用 DPanel 上游为群晖编译的
 
 - 日常试包：在 Actions 中手动运行 **Build Synology SPK**，填入已发布的上游标签，例如 `v1.11.3`。完成后从该次运行的 Artifacts 下载，不会创建 Release。
 - 正式发布：等 `donknap/dpanel` 的同名 Release 上传 `dpanel-synology-amd64` 和 `dpanel-synology-arm64` 后，在本仓库推送同名标签。Actions 会从上游下载二进制、校验架构、生成套件，并发布到本仓库的 GitHub Release。
-- Pull Request 运行套件模板和生命周期脚本测试，不下载二进制、不生成包。正式及手动构建都会同时提供 `SHA256SUMS`。
+- 正式及手动构建都会同时提供 `SHA256SUMS`。
 - 支持的标签格式为 `vX.Y.Z`、`vX.Y.Z.N`、`vX.Y.Z-N`。DSM 套件版本为 `X.Y.Z-N`，三段标签的构建号为 `0`。
 
 | Release 产物 | DSM 架构 |

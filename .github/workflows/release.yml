@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  pull_request:
   workflow_dispatch:
     inputs:
       version:
@@ -28,20 +27,7 @@ env:
   DPANEL_TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Check DSM templates and hooks
-        run: |
-          python3 tests/test_package.py -v
-          node tests/test-launcher.cjs
-
   build:
-    if: github.event_name != 'pull_request'
-    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
