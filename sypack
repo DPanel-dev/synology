@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C TZ=UTC COPYFILE_DISABLE=1
+
+fail() {
+    printf 'Build SPK: %s\n' "$1" >&2
+    exit 1
+}
+
+[[ ${1:-} == build && $# -le 2 ]] || fail 'Usage: sypack build [package-directory]'
+package_dir=${2:-.}
+CDPATH= cd -- "$package_dir/" || fail "Cannot open package directory: $package_dir"
+[[ -f INFO && -d app ]] || fail "Expected INFO and app/ in $package_dir."
+name=$(sed -n 's/^package="\([A-Za-z0-9_][A-Za-z0-9_.-]*\)"$/\1/p' INFO)
+[[ $name =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || fail 'Invalid package name in INFO.'
+for field in arch version; do
+    grep -Eq "^$field=\"[^\"@]+\"$" INFO || fail "Set $field in INFO before building."
+done
+
+if command -v md5sum >/dev/null; then
+    md5_command=(md5sum)
+else
+    md5_command=(md5 -q)
+fi
+tar_version=$(tar --version)
+archive_option_list=(--format=ustar '--exclude=.DS_Store' '--exclude=._*' '--exclude=.env*')
+case "$tar_version" in
+    *bsdtar*)
+        archive_option_list+=(--no-mac-metadata --uid 0 --gid 0 --uname root --gname root)
+        ;;
+    *'GNU tar'*)
+        archive_option_list+=(--numeric-owner --owner=0 --group=0 --sort=name --mtime=@0)
+        ;;
+    *) fail 'Expected BSD tar or GNU tar.' ;;
+esac
+
+write_archive() {
+    local source=$1
+    shift
+    if [[ $tar_version == *bsdtar* ]]; then
+        # BSD tar takes mtimes from the staged files rather than a tar option.
+        find "$source" -exec touch -t 197001010000 {} +
+    fi
+    tar -c "${archive_option_list[@]}" -f - -C "$source" "$@"
+}
+
+work=$(mktemp -d ./.sypack.XXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+mkdir "$work/spk"
+shopt -s nullglob
+outer=(INFO)
+for entry in scripts conf WIZARD_UIFILES PACKAGE_ICON*.PNG LICENSE; do
+    if [[ -e $entry || -L $entry ]]; then
+        outer+=("$entry")
+    fi
+done
+unsupported_path=$(find app "${outer[@]}" ! \( -type f -o -type d \) -print -quit)
+[[ -z $unsupported_path ]] || fail "Unsupported package entry: $unsupported_path"
+cp -R app "$work/app"
+cp -R "${outer[@]}" "$work/spk/"
+write_archive "$work/app" . | gzip -n > "$work/spk/package.tgz"
+checksum=$("${md5_command[@]}" < "$work/spk/package.tgz" | cut -d ' ' -f 1)
+# The checksum describes the compressed payload, not the source directory.
+awk -v sum="$checksum" '!/^checksum=/; END { print "checksum=\"" sum "\"" }' INFO > "$work/INFO"
+mv -f "$work/INFO" "$work/spk/INFO"
+write_archive "$work/spk" "${outer[@]}" package.tgz > "$work/package.spk"
+[[ ! -d ./$name.spk ]] || fail "Output path is a directory: $name.spk"
+mv -f "$work/package.spk" "./$name.spk"
+printf '%s/%s.spk\n' "${package_dir%/}" "$name"

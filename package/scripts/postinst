@@ -7,17 +7,13 @@ init_username=${DP_INIT_USERNAME:-admin}
 init_password=${DP_INIT_PASSWORD:-}
 unset DP_INIT_USERNAME DP_INIT_PASSWORD
 
+[ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] || exit 0
 umask 077
-[ ! -L "$STATE_DIR" ] || report_error 'DPanel 状态目录不能是符号链接。'
-mkdir -p "$STATE_DIR"
 [ ! -L "$ENV_FILE" ] || report_error 'DPanel 配置文件不能是符号链接。'
 if [ ! -f "$ENV_FILE" ]; then
     PORT=${DP_APP_SERVER_PORT:-8086}
-    if [ -f "$STATE_DIR/connection.conf" ]; then
-        IFS= read -r PORT < "$STATE_DIR/connection.conf" || report_error '无法读取旧版 DPanel 端口。'
-    fi
     valid_port "$PORT" || report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'
-    env_tmp=$(mktemp "$STATE_DIR/.env.XXXXXX")
+    env_tmp=$(mktemp "$PKG_DEST/server/.env.XXXXXX")
     trap 'rm -f -- "$env_tmp"' EXIT
     cat > "$env_tmp" <<ENV
 APP_NAME=dpanel
@@ -36,18 +32,16 @@ ENV
     trap - EXIT
 fi
 chmod 600 "$ENV_FILE"
-ln -sfn -- "$ENV_FILE" "$PKG_DEST/server/.env"
 
-if [ "${SYNOPKG_PKG_STATUS:-}" = UPGRADE ] || [ -z "$init_password" ] ||
-    [ -e "$STATE_DIR/data" ] || [ -e "$DATA_DIR" ] || [ -e "$STATE_DIR/bootstrap" ] ||
-    [ -e "$STATE_DIR/share.path" ]; then
+if [ -z "$init_password" ] || [ -e "$DATA_DIR" ] || [ -e "$PKG_VAR/bootstrap" ] ||
+    [ -e "$PKG_VAR/share.path" ]; then
     exit 0
 fi
 
 # DSM acquires the shared folder at enable time, after postinst. Bootstrap in
 # a private directory first, and import only if startup finds no existing data.
 load_env || report_error 'DPanel 的 .env 无效。'
-bootstrap=$(mktemp -d "$STATE_DIR/.bootstrap.XXXXXX")
+bootstrap=$(mktemp -d "$PKG_VAR/.bootstrap.XXXXXX")
 bootstrap_pid=
 stop_bootstrap() {
     if [ -n "$bootstrap_pid" ]; then
@@ -93,9 +87,9 @@ if [ -s "$bootstrap/data/dpanel.db" ] && printf '%s\n' "$result" |
     grep -Eq '^\{"password":.*,"username":.*\}$'; then
     unset result
     rm -rf -- "$bootstrap/data/logs"
-    mv -- "$bootstrap/data" "$STATE_DIR/bootstrap"
+    mv -- "$bootstrap/data" "$PKG_VAR/bootstrap"
 else
     unset result
     printf '%s\n' 'DPanel 安装时未能初始化管理员，请首次打开网页时创建。' >&2
-    touch "$STATE_DIR/init-warning"
+    touch "$PKG_VAR/init-warning"
 fi

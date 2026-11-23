@@ -8,3 +8,6 @@
 .DS_Store
 app/server/*
 *.fpk
+/dist/
+/package/app/server/dpanel
+/package/*.spk

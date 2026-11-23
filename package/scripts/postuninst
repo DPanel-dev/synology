@@ -4,10 +4,10 @@ set -e
 
 # Do not delete anything on upgrade or when the user chooses to keep data.
 [ "${SYNOPKG_PKG_STATUS:-}" = UNINSTALL ] && [ "${wizard_delete_data:-}" = true ] || exit 0
-[ ! -L "$STATE_DIR" ] || report_error 'DPanel 状态目录无效。'
+[ ! -L "$PKG_VAR/share.path" ] || report_error 'DPanel 共享目录记录无效。'
 share_path=$(shared_folder_path) || share_path=
-if [ -z "$share_path" ] && [ -f "$STATE_DIR/share.path" ]; then
-    IFS= read -r share_path < "$STATE_DIR/share.path"
+if [ -z "$share_path" ] && [ -f "$PKG_VAR/share.path" ]; then
+    IFS= read -r share_path < "$PKG_VAR/share.path"
 fi
 if [ -n "$share_path" ]; then
     # The link may be gone after DSM releases the resource; only accept its
@@ -20,5 +20,5 @@ if [ -n "$share_path" ]; then
         rm -f -- "$share_path/run.log"
     fi
 fi
-rm -rf -- "$STATE_DIR"
-rm -f -- "$PID_FILE"
+rm -rf -- "$PKG_VAR/bootstrap"
+rm -f -- "$PKG_VAR/init-warning" "$PKG_VAR/.upgrade.env" "$PKG_VAR/share.path" "$PID_FILE"

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+. "$(dirname "$0")/common"
+
+backup="$PKG_VAR/.upgrade.env"
+[ ! -L "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || report_error '升级需要主程序目录中的普通 .env 文件；旧试装包请使用全新安装。'
+[ ! -L "$backup" ] && [ ! -d "$backup" ] || report_error 'DPanel 升级备份路径无效。'
+umask 077
+tmp=$(mktemp "$PKG_VAR/.upgrade.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT
+cat "$ENV_FILE" > "$tmp"
+mv -f -- "$tmp" "$backup"

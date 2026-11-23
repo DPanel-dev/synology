@@ -4,11 +4,24 @@ DPanel 社区版的群晖 `.spk` 套件。使用 DPanel 上游为群晖编译的
 
 ## 打包和发布
 
-**只在 GitHub Actions 中打包，不需要在本地安装 Synology Toolkit 或生成 SPK。**
+本地打包不需要传版本号。在 `package/` 中准备好两项输入：
 
-- 日常试包：在 Actions 中手动运行 **Build Synology SPK**，填入已发布的上游标签，例如 `v1.11.3`。完成后从该次运行的 Artifacts 下载，不会创建 Release。
-- 正式发布：等 `donknap/dpanel` 的同名 Release 上传 `dpanel-synology-amd64` 和 `dpanel-synology-arm64` 后，在本仓库推送同名标签。Actions 会从上游下载二进制、校验架构、生成套件，并发布到本仓库的 GitHub Release。
-- 正式及手动构建都会同时提供 `SHA256SUMS`。
+1. 将上游的 `dpanel-synology-amd64` 或 `dpanel-synology-arm64` 放到 `app/server/dpanel`，并赋予执行权限。
+2. 手动编辑 `INFO`：把 `version` 填为实际套件版本，把 `arch` 填为与二进制匹配的 `x86_64` 或 `armv8`。
+
+从仓库根目录运行：
+
+```sh
+chmod +x package/app/server/dpanel
+./sypack build ./package
+```
+
+命令生成 `./package/dpanel.spk`；省略目录参数时，打包当前目录并将产物写回当前目录（文件名取自 `INFO` 的 `package` 字段，再次打包会覆盖）。`sypack build` 不联网、不识别二进制架构、不修改源 `INFO`；它把 `app/` 封装为 `package.tgz`，将其校验值写入包内的 `INFO`。
+
+GitHub Actions 自动完成相同的准备工作：按上游标签下载并核对两个架构的二进制，分别填写 `INFO` 并调用 `./sypack build ./package`，最后按架构命名产物并生成 `SHA256SUMS`。
+
+- Actions 试包：手动运行 **Build Synology SPK**，填写上游标签，从该次运行的 Artifacts 下载试装包。
+- 正式发布：待 `donknap/dpanel` 发布两个群晖二进制后，在本仓库推送同名版本标签，由 GitHub Actions 发布。
 - 支持的标签格式为 `vX.Y.Z`、`vX.Y.Z.N`、`vX.Y.Z-N`。DSM 套件版本为 `X.Y.Z-N`，三段标签的构建号为 `0`。
 
 | Release 产物 | DSM 架构 |
@@ -33,12 +46,13 @@ DSM 创建名为 `dpanel` 的共享文件夹。实际存储卷由 DSM 决定，�
 | 数据（数据库、应用配置等） | `/var/packages/dpanel/shares/dpanel/data/` |
 | 启动日志（DSM 版本、架构、运行账户、路径、端口、PID 和进程输出） | `/var/packages/dpanel/shares/dpanel/run.log` |
 | DPanel 应用日志 | `/var/packages/dpanel/shares/dpanel/data/logs/dpanel.log` |
-| 持久运行参数 | `/var/packages/dpanel/var/dpanel/.env`，`/var/packages/dpanel/target/server/.env` 指向此文件 |
+| 运行参数 | `/var/packages/dpanel/target/server/.env`，与主程序同目录的普通文件 |
+| 共享目录路径记录（供卸载使用） | `/var/packages/dpanel/var/share.path` |
 | 进程 PID | `/var/packages/dpanel/var/app.pid` |
 
 修改 `.env` 里的 `APP_SERVER_PORT` 后重启套件生效。`.env` 按 `KEY=VALUE` 读取，不执行 Shell 代码；安装向导填的密码不会写入该文件。不要把 `dpanel` 共享目录的写权限授予不可信用户。
 
-从试装版升级会保留端口，并将旧 `var/dpanel/data/` 复制到新的共享目录；旧数据保留。如果两边已有数据且未完成过迁移，启动会报错，不会覆盖数据库。卸载默认保留数据；选择删除时清理套件数据、配置和日志，不删除共享文件夹本身，也不删除 Docker 资源。
+旧测试布局不提供迁移，请按全新安装测试。本布局后续升级会保存并恢复 `server/.env`；卸载重装则按安装向导重新生成 `.env`。卸载默认保留数据；选择删除时清理套件数据、配置和日志，不删除共享文件夹本身，也不删除 Docker 资源。
 
 ## SSH 维护
 

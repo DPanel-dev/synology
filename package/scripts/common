@@ -6,12 +6,11 @@ case "$PKG_VAR" in
     /*) [ "$PKG_VAR" != / ] || exit 1 ;;
     *) exit 1 ;;
 esac
-STATE_DIR="$PKG_VAR/dpanel"
 SHARE_DIR="$PKG_ROOT/shares/dpanel"
 DATA_DIR="$SHARE_DIR/data"
 LOG_FILE="$SHARE_DIR/run.log"
 PID_FILE="$PKG_VAR/app.pid"
-ENV_FILE="$STATE_DIR/.env"
+ENV_FILE="$PKG_DEST/server/.env"
 DPANEL_BIN="$PKG_DEST/server/dpanel"
 
 report_error() {

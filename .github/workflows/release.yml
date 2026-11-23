@@ -34,71 +34,45 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download and validate DPanel binaries
+      - name: Build and verify SPKs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ ! "$DPANEL_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)([.-]([0-9]+))?$ ]]; then
-            echo 'Expected vX.Y.Z, vX.Y.Z.N or vX.Y.Z-N.' >&2
+          if [[ ! $DPANEL_TAG =~ ^v([0-9]+\.[0-9]+\.[0-9]+)([.-]([0-9]+))?$ ]]; then
+            echo 'Expected vX.Y.Z, vX.Y.Z.N or vX.Y.Z-N' >&2
             exit 1
           fi
-          echo "SPK_VERSION=${BASH_REMATCH[1]}-${BASH_REMATCH[3]:-0}" >> "$GITHUB_ENV"
-          gh release download "$DPANEL_TAG" --repo "$DPANEL_REPO" --dir upstream \
-            --pattern dpanel-synology-amd64 --pattern dpanel-synology-arm64
-          export LC_ALL=C
-          readelf -h upstream/dpanel-synology-amd64 > upstream/amd64.elf
-          readelf -h upstream/dpanel-synology-arm64 > upstream/arm64.elf
-          grep -Eq 'Machine: +Advanced Micro Devices X86-64$' upstream/amd64.elf
-          grep -Eq 'Machine: +AArch64$' upstream/arm64.elf
-
-      - name: Assemble and verify SPKs
-        run: |
+          version=${BASH_REMATCH[1]}-${BASH_REMATCH[3]:-0}
           mkdir -p dist
-          work=$(mktemp -d)
-          trap 'rm -rf -- "$work"' EXIT
-          export LC_ALL=C
-          archive_options=(--format=ustar --numeric-owner --owner=0 --group=0 --sort=name --mtime=@0)
           for cpu in amd64 arm64; do
             case "$cpu" in
-              amd64) dsm_arch=x86_64 ;;
-              arm64) dsm_arch=armv8 ;;
+              amd64) arch=x86_64; machine='Advanced Micro Devices X86-64' ;;
+              arm64) arch=armv8; machine=AArch64 ;;
             esac
-            stage="$work/$cpu"
-            mkdir -p "$stage/app" "$stage/spk"
-            cp -R package/app/. "$stage/app/"
-            install -Dm755 "upstream/dpanel-synology-$cpu" "$stage/app/server/dpanel"
-            chmod 755 "$stage/app/server/service.sh"
-            cp -R package/conf package/scripts package/WIZARD_UIFILES package/PACKAGE_ICON*.PNG "$stage/spk/"
-            chmod 755 "$stage/spk/scripts/"{preinst,postinst,postuninst,start-stop-status}
+            binary=package/app/server/dpanel
+            gh release download --repo "$DPANEL_REPO" --pattern "dpanel-synology-$cpu" \
+              --output "$binary" --clobber -- "$DPANEL_TAG"
+            header=$(LC_ALL=C readelf -h "$binary")
+            grep -Eq 'Class: +ELF64$' <<< "$header"
+            grep -Eq 'Data: +.*little endian$' <<< "$header"
+            grep -Eq 'Type: +(EXEC|DYN) ' <<< "$header"
+            grep -Eq "Machine: +$machine$" <<< "$header"
+            chmod +x "$binary"
+            sed -i -e "s/^version=.*/version=\"$version\"/" -e "s/^arch=.*/arch=\"$arch\"/" package/INFO
+            ./sypack build ./package
 
-            tar "${archive_options[@]}" -czf "$stage/spk/package.tgz" -C "$stage/app" server ui
-            checksum=$(md5sum "$stage/spk/package.tgz" | cut -d ' ' -f 1)
-            sed -e "s/@VERSION@/$SPK_VERSION/g" -e "s/@ARCH@/$dsm_arch/g" \
-              -e "s/@CHECKSUM@/$checksum/g" package/INFO.in > "$stage/spk/INFO"
-
-            spk="dist/dpanel-$cpu.spk"
-            tar "${archive_options[@]}" -cf "$spk" -C "$stage/spk" \
-              INFO package.tgz scripts conf WIZARD_UIFILES PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
-            tar -tf "$spk" > "$stage/outer.txt"
-            tar -xOf "$spk" package.tgz | tar -tzf - > "$stage/inner.txt"
-            grep -Fx 'scripts/start-stop-status' "$stage/outer.txt"
-            grep -Fx 'conf/privilege' "$stage/outer.txt"
-            grep -Fx 'conf/resource' "$stage/outer.txt"
-            grep -Fx 'WIZARD_UIFILES/install_uifile' "$stage/outer.txt"
-            grep -Fx 'server/dpanel' "$stage/inner.txt"
-            grep -Fx 'server/service.sh' "$stage/inner.txt"
-            grep -Fx 'ui/config' "$stage/inner.txt"
-            tar -xOf "$spk" INFO > "$stage/INFO.actual"
-            grep -Fx "arch=\"$dsm_arch\"" "$stage/INFO.actual"
-            grep -Fx "version=\"$SPK_VERSION\"" "$stage/INFO.actual"
-            grep -Fx "checksum=\"$checksum\"" "$stage/INFO.actual"
-            actual_checksum=$(tar -xOf "$spk" package.tgz | md5sum | cut -d ' ' -f 1)
-            test "$actual_checksum" = "$checksum"
+            spk=dist/dpanel-$cpu.spk
+            mv package/dpanel.spk "$spk"
+            info=$(tar -xOf "$spk" INFO)
+            grep -Fxq "version=\"$version\"" <<< "$info"
+            grep -Fxq "arch=\"$arch\"" <<< "$info"
+            checksum=$(tar -xOf "$spk" package.tgz | md5sum | cut -d ' ' -f 1)
+            grep -Fxq "checksum=\"$checksum\"" <<< "$info"
+            tar -tf "$spk" scripts/{preinst,postinst,preupgrade,postupgrade,postuninst,start-stop-status} \
+              conf/{privilege,resource} WIZARD_UIFILES/install_uifile >/dev/null
+            tar -xOf "$spk" package.tgz | tar -tzf - ./server/{dpanel,service.sh} ./ui/config >/dev/null
           done
-          (
-            cd dist
-            sha256sum dpanel-amd64.spk dpanel-arm64.spk > SHA256SUMS
-          )
+          (cd dist && sha256sum dpanel-amd64.spk dpanel-arm64.spk > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
         with:
