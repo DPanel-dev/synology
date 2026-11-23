@@ -18,17 +18,39 @@ DPanel 社区版的群晖 `.spk` 套件。使用 DPanel 上游为群晖编译的
 
 ## 安装与访问
 
-1. 在 **套件中心 → 手动安装** 选择对应架构的 SPK。这是第三方套件，不是群晖官方签名分发的套件。
-2. 选择端口，默认 `8086`。默认只监听 `127.0.0.1`。推荐在 DSM 的 **登录门户 → 高级 → 反向代理** 创建 HTTPS 入口，将目标设为 HTTP、`127.0.0.1` 和安装时选的端口，并配置 WebSocket 转发。然后访问该 HTTPS 入口的 `/dpanel/ui`。安装向导若填写了该 HTTPS 入口（只填主机名和可选端口），DSM 桌面图标可以直接打开它。
-3. 也可以在安装时勾选允许直连，从可信内网访问 `http://NAS地址:端口/dpanel/ui`。直连使用 HTTP，请限制防火墙的来源，不要转发到公网。
-4. 首次在 DPanel 界面创建管理员。当前套件不支持 DSM 一键登录。
+1. 在 **套件中心 → 手动安装** 选择对应架构的 SPK，阅读并同意 DPanel《服务条款》。
+2. 设置应用端口（默认 `8086`），管理员用户名默认 `admin`，密码可留空。新安装填了密码会尝试初始化管理员；留空则在网页中创建。升级或保留数据重装不会重置已有账号。
+3. 确认套件已运行，在浏览器打开 `http://NAS地址:端口`（例如 `http://172.16.1.223:8086`）。DSM 桌面图标也指向这个 HTTP 服务。无需配置反向代理，当前不支持 DSM 一键登录。
+
+服务监听 NAS 的 IPv4 网络接口。只在可信内网使用，必要时用 DSM 防火墙限制来源，不要把 HTTP 端口转发到公网。
+
+## 数据、配置和日志
+
+DSM 创建名为 `dpanel` 的共享文件夹。实际存储卷由 DSM 决定，以下为套件使用的固定路径：
+
+| 内容 | 路径 |
+| --- | --- |
+| 数据（数据库、应用配置等） | `/var/packages/dpanel/shares/dpanel/data/` |
+| 启动日志（DSM 版本、架构、运行账户、路径、端口、PID 和进程输出） | `/var/packages/dpanel/shares/dpanel/run.log` |
+| DPanel 应用日志 | `/var/packages/dpanel/shares/dpanel/data/logs/dpanel.log` |
+| 持久运行参数 | `/var/packages/dpanel/var/dpanel/.env`，`/var/packages/dpanel/target/server/.env` 指向此文件 |
+| 进程 PID | `/var/packages/dpanel/var/app.pid` |
+
+修改 `.env` 里的 `APP_SERVER_PORT` 后重启套件生效。`.env` 按 `KEY=VALUE` 读取，不执行 Shell 代码；安装向导填的密码不会写入该文件。不要把 `dpanel` 共享目录的写权限授予不可信用户。
+
+从试装版升级会保留端口，并将旧 `var/dpanel/data/` 复制到新的共享目录；旧数据保留。如果两边已有数据且未完成过迁移，启动会报错，不会覆盖数据库。卸载默认保留数据；选择删除时清理套件数据、配置和日志，不删除共享文件夹本身，也不删除 Docker 资源。
+
+## SSH 维护
+
+```sh
+sudo /usr/syno/bin/synopkg status dpanel
+sudo /usr/syno/bin/synopkg restart dpanel
+sudo -u dpanel /var/packages/dpanel/target/server/service.sh --help
+sudo tail -n 100 /var/packages/dpanel/shares/dpanel/run.log
+```
+
+`service.sh` 的 `start`、`stop`、`restart`、`status` 交给 DSM 套件管理；其他参数传给 DPanel CLI，与服务使用同一份 `.env` 和数据目录。若套件在挂载共享目录之前就失败，先看套件中心的启动报错，此时共享目录里可能还没有 `run.log`。
 
 ### Docker 权限
 
-套件使用 DSM 分配的内部用户运行，不以 root 运行，也不修改 Docker socket 权限。要管理本机容器，请先安装机型支持的 Container Manager（旧系统上可能叫 Docker），并为 DPanel 套件用户明确授权访问其 Docker socket；如不授权，可在 DPanel 中配置用 TLS 或 SSH 保护的远程 Docker 端点。**Docker socket 的访问权限等同于对 Docker 宿主机的高权限控制**，不要将其设置为所有人可读写。
-
-### 数据保留
-
-运行数据、监听配置和日志存放于 `/var/packages/dpanel/var/dpanel/`（随套件安装卷）。升级不会覆盖该目录。卸载默认保留；只有在卸载向导主动勾选删除才清理该目录，不会删除 Docker 容器、镜像或卷。重装时请选择同一个存储卷以复用保留的数据和原监听配置。
-
-如需为已安装套件补填或修改 HTTPS 入口，可在保留原设置的前提下，修改 `/var/packages/dpanel/var/dpanel/connection.conf` 的第三行（前两行分别是端口和是否允许 HTTP 直连）。重启套件后桌面入口会更新；留空则恢复直连链接或反向代理设置指引。
+套件使用 DSM 分配的内部用户运行，不以 root 运行，也不修改 Docker socket 权限。若要管理本机容器，请安装机型支持的 Container Manager（旧系统上可能叫 Docker），为套件用户明确授权；或者配置通过 TLS 或 SSH 保护的远程 Docker 端点。不要将 Docker socket 设置为所有人可读写。

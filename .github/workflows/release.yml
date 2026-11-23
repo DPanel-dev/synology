@@ -67,6 +67,7 @@ jobs:
             mkdir -p "$stage/app" "$stage/spk"
             cp -R package/app/. "$stage/app/"
             install -Dm755 "upstream/dpanel-synology-$cpu" "$stage/app/server/dpanel"
+            chmod 755 "$stage/app/server/service.sh"
             cp -R package/conf package/scripts package/WIZARD_UIFILES package/PACKAGE_ICON*.PNG "$stage/spk/"
             chmod 755 "$stage/spk/scripts/"{preinst,postinst,postuninst,start-stop-status}
 
@@ -82,8 +83,10 @@ jobs:
             tar -xOf "$spk" package.tgz | tar -tzf - > "$stage/inner.txt"
             grep -Fx 'scripts/start-stop-status' "$stage/outer.txt"
             grep -Fx 'conf/privilege' "$stage/outer.txt"
+            grep -Fx 'conf/resource' "$stage/outer.txt"
             grep -Fx 'WIZARD_UIFILES/install_uifile' "$stage/outer.txt"
             grep -Fx 'server/dpanel' "$stage/inner.txt"
+            grep -Fx 'server/service.sh' "$stage/inner.txt"
             grep -Fx 'ui/config' "$stage/inner.txt"
             tar -xOf "$spk" INFO > "$stage/INFO.actual"
             grep -Fx "arch=\"$dsm_arch\"" "$stage/INFO.actual"

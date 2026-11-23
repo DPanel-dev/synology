@@ -1,43 +1,104 @@
 #!/bin/sh
 . "$(dirname "$0")/common"
 
+prepare_data() {
+    [ ! -L "$DATA_DIR" ] && [ ! -L "$LOG_FILE" ] || return 1
+    [ ! -e "$DATA_DIR" ] || [ -d "$DATA_DIR" ] || return 1
+    [ ! -e "$LOG_FILE" ] || [ -f "$LOG_FILE" ] || return 1
+    [ ! -e "$DATA_DIR/dpanel.db" ] || [ -f "$DATA_DIR/dpanel.db" ] || return 1
+    [ ! -L "$DATA_DIR/dpanel.db" ] && [ ! -L "$STATE_DIR/data" ] || return 1
+
+    if [ -d "$STATE_DIR/data" ] && [ ! -f "$DATA_DIR/.migrated-v1" ]; then
+        # Never guess which DB to keep if both locations contain data.
+        if [ -e "$DATA_DIR" ]; then
+            report_error '旧目录和共享目录都存在 DPanel 数据，未覆盖任何文件。请先备份并确认使用哪份数据。'
+            return 1
+        fi
+        source_dir="$STATE_DIR/data"
+    elif [ ! -e "$DATA_DIR" ] && [ -d "$STATE_DIR/bootstrap" ]; then
+        source_dir="$STATE_DIR/bootstrap"
+    else
+        source_dir=
+    fi
+
+    if [ -n "$source_dir" ]; then
+        # Stage on the target volume so the final move is atomic, even when
+        # the package and share are on different volumes. Keep the old DB.
+        stage=$(mktemp -d "$SHARE_DIR/.dpanel-import.XXXXXX") || return 1
+        if cp -pR -- "$source_dir/." "$stage/" &&
+            touch "$stage/.dpanel-managed" &&
+            { [ "$source_dir" != "$STATE_DIR/data" ] || touch "$stage/.migrated-v1"; } &&
+            [ ! -e "$DATA_DIR" ] && mv -T -- "$stage" "$DATA_DIR"; then
+            [ "$source_dir" != "$STATE_DIR/bootstrap" ] || rm -rf -- "$source_dir"
+        else
+            rm -rf -- "$stage"
+            return 1
+        fi
+    else
+        if [ -d "$DATA_DIR" ] && [ ! -f "$DATA_DIR/.dpanel-managed" ] && [ ! -f "$DATA_DIR/dpanel.db" ]; then
+            report_error '共享目录里的 data 不是可识别的 DPanel 数据目录，未修改。'
+            return 1
+        fi
+        mkdir -p "$DATA_DIR" && touch "$DATA_DIR/.dpanel-managed" || return 1
+    fi
+    if [ ! -e "$LOG_FILE" ] && [ -f "$STATE_DIR/run.log" ]; then
+        cp -- "$STATE_DIR/run.log" "$LOG_FILE" || return 1
+    fi
+    touch "$LOG_FILE"
+}
+
 start_server() {
     if [ -f "$PID_FILE" ] && owned_pid; then
         return 0
     fi
     umask 077
-    [ ! -L "$STATE_DIR" ] || { report_error 'DPanel 数据目录不能是符号链接。'; return 1; }
+    [ -d "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ] || { report_error 'DPanel 状态目录无效。'; return 1; }
     [ -x "$DPANEL_BIN" ] || { report_error '找不到可执行的 DPanel 二进制。'; return 1; }
-    read_config || { report_error 'DPanel 的 connection.conf 无效。'; return 1; }
-    write_launcher_config || { report_error '无法更新 DPanel 的 DSM 桌面入口。'; return 1; }
-    mkdir -p "$STATE_DIR/data" || return 1
-    cd "$STATE_DIR" || return 1
+    load_env || { report_error 'DPanel 的 .env 无效。'; return 1; }
+    share_path=$(shared_folder_path) || { report_error 'DSM 未挂载 dpanel 共享目录，请检查套件资源及共享文件夹权限。'; return 1; }
+    prepare_data || { report_error '无法准备 DPanel 共享数据目录。'; return 1; }
+    printf '%s\n' "$share_path" > "$STATE_DIR/share.path" || return 1
 
-    APP_SERVER_HOST=127.0.0.1
-    [ "$LAN" != true ] || APP_SERVER_HOST=0.0.0.0
-    HOME="$STATE_DIR"
-    PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin
-    export HOME PATH APP_SERVER_HOST
-
+    log_msg '============== System / Package =============='
+    log_msg "DSM=${SYNOPKG_DSM_VERSION_MAJOR:-?}.${SYNOPKG_DSM_VERSION_MINOR:-?} build=${SYNOPKG_DSM_VERSION_BUILD:-?} architecture=${SYNOPKG_DSM_ARCH:-$(uname -m)} kernel=$(uname -sr)"
+    log_msg "Package=${SYNOPKG_PKGNAME:-dpanel} version=${SYNOPKG_PKGVER:-?} action=${SYNOPKG_PKG_STATUS:-boot} user=$(id -un) uid=$(id -u) gid=$(id -g)"
+    log_msg "Program=$DPANEL_BIN share=$share_path data=$DATA_DIR env=$ENV_FILE pidfile=$PID_FILE"
+    log_msg "Starting HTTP on $APP_SERVER_HOST:$APP_SERVER_PORT"
+    if [ -f "$STATE_DIR/init-warning" ]; then
+        log_msg 'Installer did not initialize the administrator. Create the account in the web UI.'
+        rm -f -- "$STATE_DIR/init-warning"
+    fi
     if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
-        printf '%s\n' 'DPanel does not have access to /var/run/docker.sock. Use a remote Docker endpoint or grant access explicitly.' >> "$LOG_FILE"
+        log_msg 'DPanel does not have access to /var/run/docker.sock. Use a remote Docker endpoint or grant access explicitly.'
+    fi
+    if launcher=$(mktemp "$PKG_DEST/ui/.connection.XXXXXX") &&
+        printf 'window.dpanelPort = %s;\n' "$APP_SERVER_PORT" > "$launcher" &&
+        chmod 644 "$launcher" && mv -f -- "$launcher" "$PKG_DEST/ui/connection.js"; then
+        :
+    else
+        [ -z "$launcher" ] || rm -f -- "$launcher"
+        log_msg 'Could not update the desktop shortcut. Direct HTTP access is unaffected.'
     fi
 
-    if ! : > "$PID_FILE" || ! : >> "$LOG_FILE"; then
-        report_error '无法写入 DPanel 的运行文件。'
-        return 1
-    fi
-    APP_NAME=dpanel APP_ENV=lite APP_FAMILY=ce APP_DEV=false \
-        APP_SERVER_PORT="$PORT" DP_SYSTEM_STORAGE_LOCAL_PATH="$STATE_DIR/data" \
-        DP_LOG_CONSOLE_LEVEL=info DP_LOG_FILE_LEVEL=info \
-        nohup "$DPANEL_BIN" server:start </dev/null >> "$LOG_FILE" 2>&1 &
-    printf '%s\n' "$!" > "$PID_FILE"
-    sleep 1
-    if ! owned_pid; then
-        rm -f -- "$PID_FILE"
-        report_error 'DPanel 未能启动，请查看套件数据目录中的 run.log。'
-        return 1
-    fi
+    cd "$DATA_DIR" || return 1
+    [ ! -L "$PID_FILE" ] && : > "$PID_FILE" || { report_error '无法写入 DPanel PID 文件。'; return 1; }
+    nohup "$DPANEL_BIN" server:start </dev/null >> "$LOG_FILE" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$PID_FILE" || return 1
+    log_msg "pid=$pid"
+
+    # A live PID alone does not mean the HTTP service is available.
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        sleep 1
+        owned_pid || break
+        if curl --noproxy '*' -fsS --max-time 1 -o /dev/null "http://127.0.0.1:$APP_SERVER_PORT/dpanel/ui" 2>/dev/null; then
+            log_msg 'DPanel HTTP is ready.'
+            return 0
+        fi
+    done
+    log_msg 'DPanel did not become ready. Check the errors above and whether the configured port is in use.'
+    stop_server
+    report_error "DPanel HTTP 未就绪，请查看 $LOG_FILE。"
 }
 
 stop_server() {

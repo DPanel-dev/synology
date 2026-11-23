@@ -1,12 +1,13 @@
 #!/bin/sh
 . "$(dirname "$0")/common"
 
-if [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] && ! valid_port "${wizard_port:-8086}"; then
-    report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'
+[ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] || exit 0
+[ "${wizard_agree_terms:-}" = true ] || { report_error '请先阅读并同意 DPanel 服务条款。'; exit 1; }
+valid_port "${DP_APP_SERVER_PORT:-8086}" || { report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'; exit 1; }
+case "${DP_INIT_USERNAME:-admin}" in
+    __public__|*[!a-zA-Z0-9_]*) report_error '管理员用户名无效。'; exit 1 ;;
+esac
+if [ -n "${DP_INIT_PASSWORD:-}" ] && [ "${#DP_INIT_PASSWORD}" -lt 6 ]; then
+    report_error '管理员密码不能少于 6 位。'
     exit 1
 fi
-if [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] && ! valid_public_origin "${wizard_public_origin:-}"; then
-    report_error 'HTTPS 入口必须为 https://主机名[:端口]，不能包含路径。'
-    exit 1
-fi
-exit 0

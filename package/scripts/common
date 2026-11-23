@@ -1,14 +1,17 @@
-# Sourced by the DSM lifecycle hooks.
-PKG_VAR=${SYNOPKG_PKGVAR:-/var/packages/dpanel/var}
-PKG_DEST=${SYNOPKG_PKGDEST:-/var/packages/dpanel/target}
+# Shared paths and runtime environment for DSM lifecycle hooks and service.sh.
+PKG_ROOT=/var/packages/dpanel
+PKG_VAR=${SYNOPKG_PKGVAR:-$PKG_ROOT/var}
+PKG_DEST=${SYNOPKG_PKGDEST:-$PKG_ROOT/target}
 case "$PKG_VAR" in
     /*) [ "$PKG_VAR" != / ] || exit 1 ;;
     *) exit 1 ;;
 esac
 STATE_DIR="$PKG_VAR/dpanel"
-CONFIG_FILE="$STATE_DIR/connection.conf"
-LOG_FILE="$STATE_DIR/run.log"
-PID_FILE="$STATE_DIR/server.pid"
+SHARE_DIR="$PKG_ROOT/shares/dpanel"
+DATA_DIR="$SHARE_DIR/data"
+LOG_FILE="$SHARE_DIR/run.log"
+PID_FILE="$PKG_VAR/app.pid"
+ENV_FILE="$STATE_DIR/.env"
 DPANEL_BIN="$PKG_DEST/server/dpanel"
 
 report_error() {
@@ -27,50 +30,28 @@ valid_port() {
     esac
 }
 
-valid_public_origin() {
-    [ -z "$1" ] && return 0
-    # Only an HTTPS hostname (or IPv4 address) and optional numeric port.
-    # An allowlist also keeps the value safe in the generated JavaScript.
-    case "$1" in
-        https://*) authority=${1#https://} ;;
-        *) return 1 ;;
-    esac
-    case "$authority" in ''|*[!A-Za-z0-9.:-]*|*..*) return 1 ;; esac
-    name=${authority%%:*}
-    case "$name" in
-        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9]|*.-*|*-.*) return 1 ;;
-    esac
-    if [ "$authority" != "$name" ]; then
-        port=${authority#*:}
-        case "$port" in ''|0*|*[!0-9]*|??????*) return 1 ;; esac
-        [ "$port" -le 65535 ] || return 1
-    fi
-}
-
-read_config() {
-    PORT=8086
-    LAN=false
-    PUBLIC_ORIGIN=
-    if [ -f "$CONFIG_FILE" ]; then
-        {
-            IFS= read -r PORT && IFS= read -r LAN || return 1
-            IFS= read -r PUBLIC_ORIGIN || :  # Older configs have only two lines.
-        } < "$CONFIG_FILE"
-    fi
-    valid_port "$PORT" || return 1
-    case "$LAN" in true|false) ;; *) return 1 ;; esac
-    valid_public_origin "$PUBLIC_ORIGIN"
-}
-
-write_launcher_config() {
-    temp=$(mktemp "$PKG_DEST/ui/.connection.XXXXXX") || return 1
-    if printf 'window.dpanelConnection = { port: %s, direct: %s, publicOrigin: "%s" };\n' \
-        "$PORT" "$LAN" "$PUBLIC_ORIGIN" > "$temp" && chmod 644 "$temp" && \
-        mv -f -- "$temp" "$PKG_DEST/ui/connection.js"; then
-        return 0
-    fi
-    rm -f -- "$temp"
-    return 1
+load_env() {
+    [ ! -L "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || return 1
+    APP_SERVER_PORT=
+    # Treat .env as data, not as a shell script. Other app settings may be
+    # added explicitly, but DSM paths and platform-specific auth stay fixed.
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        case "$key" in
+            ''|'#'*) ;;
+            APP_SERVER_PORT|APP_ENV|APP_FAMILY|APP_DEV|DP_LOG_CONSOLE_LEVEL|DP_LOG_FILE_LEVEL|INSTALLER_RELEASE|INSTALLER_BASE_IMAGE|HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)
+                export "$key=$value" ;;
+            APP_NAME|APP_SERVER_HOST|DP_SYSTEM_STORAGE_LOCAL_PATH) ;; # Generated; not user settings.
+            *) return 1 ;;
+        esac
+    done < "$ENV_FILE"
+    valid_port "$APP_SERVER_PORT" || return 1
+    APP_NAME=dpanel
+    APP_SERVER_HOST=0.0.0.0
+    DP_SYSTEM_STORAGE_LOCAL_PATH="$DATA_DIR"
+    HOME="$DATA_DIR"
+    PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin
+    unset STORAGE_LOCAL_PATH APP_SERVER_SOCKET DP_RUN_IN_FNNAS DP_SYSTEM_BASEURL DP_INIT_USERNAME DP_INIT_PASSWORD
+    export APP_NAME APP_SERVER_HOST DP_SYSTEM_STORAGE_LOCAL_PATH HOME PATH
 }
 
 owned_pid() {
@@ -78,4 +59,13 @@ owned_pid() {
     case "$pid" in ''|0*|1|*[!0-9]*) return 1 ;; esac
     # Never signal a stale PID that has been reused by an unrelated service.
     [ "/proc/$pid/exe" -ef "$DPANEL_BIN" ]
+}
+
+shared_folder_path() {
+    [ -L "$SHARE_DIR" ] && [ -d "$SHARE_DIR" ] || return 1
+    readlink -f -- "$SHARE_DIR"
+}
+
+log_msg() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "$LOG_FILE"
 }
