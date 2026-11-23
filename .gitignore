@@ -10,4 +10,5 @@ app/server/*
 *.fpk
 /dist/
 /package/app/server/dpanel
+/*.spk
 /package/*.spk

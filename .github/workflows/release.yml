@@ -62,7 +62,7 @@ jobs:
             ./sypack build ./package
 
             spk=dist/dpanel-$cpu.spk
-            mv package/dpanel.spk "$spk"
+            mv dpanel.spk "$spk"
             info=$(tar -xOf "$spk" INFO)
             grep -Fxq "version=\"$version\"" <<< "$info"
             grep -Fxq "arch=\"$arch\"" <<< "$info"

@@ -6,17 +6,16 @@ DPanel 社区版的群晖 `.spk` 套件。使用 DPanel 上游为群晖编译的
 
 本地打包不需要传版本号。在 `package/` 中准备好两项输入：
 
-1. 将上游的 `dpanel-synology-amd64` 或 `dpanel-synology-arm64` 放到 `app/server/dpanel`，并赋予执行权限。
+1. 将上游的 `dpanel-synology-amd64` 或 `dpanel-synology-arm64` 放到 `app/server/dpanel`。打包时会自动将包内 `server/dpanel` 的权限设为 `0755`，不修改源文件权限。
 2. 手动编辑 `INFO`：把 `version` 填为实际套件版本，把 `arch` 填为与二进制匹配的 `x86_64` 或 `armv8`。
 
 从仓库根目录运行：
 
 ```sh
-chmod +x package/app/server/dpanel
 ./sypack build ./package
 ```
 
-命令生成 `./package/dpanel.spk`；省略目录参数时，打包当前目录并将产物写回当前目录（文件名取自 `INFO` 的 `package` 字段，再次打包会覆盖）。`sypack build` 不联网、不识别二进制架构、不修改源 `INFO`；它把 `app/` 封装为 `package.tgz`，将其校验值写入包内的 `INFO`。
+命令从 `./package` 读取套件，在执行命令的目录生成 `./dpanel.spk`。省略目录参数时，从当前目录读取套件，输出位置不变（文件名取自 `INFO` 的 `package` 字段，再次打包会覆盖）。`sypack build` 不联网、不识别二进制架构、不修改源 `INFO`；它把 `app/` 封装为 `package.tgz`，将其校验值写入包内的 `INFO`。
 
 GitHub Actions 自动完成相同的准备工作：按上游标签下载并核对两个架构的二进制，分别填写 `INFO` 并调用 `./sypack build ./package`，最后按架构命名产物并生成 `SHA256SUMS`。
 

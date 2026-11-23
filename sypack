@@ -8,6 +8,7 @@ fail() {
 }
 
 [[ ${1:-} == build && $# -le 2 ]] || fail 'Usage: sypack build [package-directory]'
+output_dir=$PWD
 package_dir=${2:-.}
 CDPATH= cd -- "$package_dir/" || fail "Cannot open package directory: $package_dir"
 [[ -f INFO && -d app ]] || fail "Expected INFO and app/ in $package_dir."
@@ -57,6 +58,10 @@ done
 unsupported_path=$(find app "${outer[@]}" ! \( -type f -o -type d \) -print -quit)
 [[ -z $unsupported_path ]] || fail "Unsupported package entry: $unsupported_path"
 cp -R app "$work/app"
+if [[ $name == dpanel ]]; then
+    [[ -f $work/app/server/dpanel ]] || fail 'Expected the DPanel binary at app/server/dpanel.'
+    chmod 0755 "$work/app/server/dpanel"
+fi
 cp -R "${outer[@]}" "$work/spk/"
 write_archive "$work/app" . | gzip -n > "$work/spk/package.tgz"
 checksum=$("${md5_command[@]}" < "$work/spk/package.tgz" | cut -d ' ' -f 1)
@@ -64,6 +69,7 @@ checksum=$("${md5_command[@]}" < "$work/spk/package.tgz" | cut -d ' ' -f 1)
 awk -v sum="$checksum" '!/^checksum=/; END { print "checksum=\"" sum "\"" }' INFO > "$work/INFO"
 mv -f "$work/INFO" "$work/spk/INFO"
 write_archive "$work/spk" "${outer[@]}" package.tgz > "$work/package.spk"
-[[ ! -d ./$name.spk ]] || fail "Output path is a directory: $name.spk"
-mv -f "$work/package.spk" "./$name.spk"
-printf '%s/%s.spk\n' "${package_dir%/}" "$name"
+output=$output_dir/$name.spk
+[[ ! -d $output ]] || fail "Output path is a directory: $output"
+mv -f "$work/package.spk" "$output"
+printf './%s.spk\n' "$name"
