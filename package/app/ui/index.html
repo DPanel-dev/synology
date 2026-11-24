@@ -1,16 +1,23 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>DPanel</title>
 </head>
+
 <body>
   <main>
     <h1>DPanel</h1>
+    <form id="authorize" method="post" hidden>
+      <input type="hidden" name="SynoToken">
+    </form>
     <p id="missing" hidden></p>
     <p><a id="open" rel="noreferrer" hidden></a></p>
   </main>
+  <script>alert("已打开 DPanel 测试入口，点确定后获取 SynoToken。");</script>
   <script src="config.js"></script>
   <script>
     const language = /^zh(?:-|$)/i.test(navigator.language) ? 'zh-CN' : 'en-US';
@@ -19,13 +26,39 @@
     const link = document.getElementById('open');
     const missing = document.getElementById('missing');
     if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
-      const url = new URL('/dpanel/ui', window.location.href);
-      url.protocol = 'http:';
+      const url = new URL('/dpanel/api/common/user/oauth/authorize?provider=synology', window.location.href);
       url.port = String(port);
-      link.href = url.href;
+      link.href = new URL('/dpanel/ui/user/login', url).href;
       link.textContent = url.host;
       link.hidden = false;
-      window.location.replace(url.href);
+      fetch('/webapi/entry.cgi?api=SYNO.API.Auth&version=6&method=token', {
+        credentials: 'same-origin', cache: 'no-store', mode: 'same-origin',
+        referrerPolicy: 'same-origin',
+      })
+        .then(async response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const result = await response.json();
+          if (result?.success !== true || !result.data) throw new Error(`DSM 错误码：${result?.error?.code ?? "未知"}`);
+          const token = result.data.synotoken;
+          if (token == null || token === '') {
+            alert('DSM 没有返回 SynoToken。');
+            // DSM can omit the token when CSRF protection is off.
+            window.location.replace(url.href);
+            return;
+          }
+          if (typeof token !== 'string') throw new Error('SynoToken 格式不正确');
+          alert(`SynoToken：${token}`);
+          const form = document.getElementById('authorize');
+          form.action = url.href;
+          form.elements.SynoToken.value = token;
+          form.submit();
+        })
+        .catch(error => {
+          alert(`未能取得 SynoToken：${error.message}`);
+          window.location.replace(link.href);
+        });
+    } else {
+      alert('DPanel 端口无效，未请求 SynoToken。');
     }
 
     fetch(`locales/${language}.json`)
@@ -47,4 +80,5 @@
       });
   </script>
 </body>
+
 </html>
