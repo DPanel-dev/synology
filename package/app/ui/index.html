@@ -1,17 +1,50 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DPanel</title>
-  <script src="connection.js" defer></script>
-  <script src="launch.js" defer></script>
 </head>
 <body>
   <main>
     <h1>DPanel</h1>
-    <p id="missing">未获取到 DPanel 端口，请在套件中心确认 DPanel 已运行。</p>
-    <p><a id="open" rel="noreferrer" hidden>打开 DPanel</a></p>
+    <p id="missing" hidden></p>
+    <p><a id="open" rel="noreferrer" hidden></a></p>
   </main>
+  <script src="config.js"></script>
+  <script>
+    const language = /^zh(?:-|$)/i.test(navigator.language) ? 'zh-CN' : 'en-US';
+    document.documentElement.lang = language;
+    const port = window.dpanelPort;
+    const link = document.getElementById('open');
+    const missing = document.getElementById('missing');
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
+      const url = new URL('/dpanel/ui', window.location.href);
+      url.protocol = 'http:';
+      url.port = String(port);
+      link.href = url.href;
+      link.textContent = url.host;
+      link.hidden = false;
+      window.location.replace(url.href);
+    }
+
+    fetch(`locales/${language}.json`)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}: locales/${language}.json`);
+        return response.json();
+      })
+      .then(desktop => {
+        if (!link.hidden) {
+          link.textContent = desktop.openLink.replace('{host}', link.host);
+        } else {
+          missing.textContent = desktop.portUnavailable;
+          missing.hidden = false;
+        }
+      })
+      .catch(error => {
+        missing.textContent = error.message;
+        missing.hidden = false;
+      });
+  </script>
 </body>
 </html>

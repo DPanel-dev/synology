@@ -1,10 +1,11 @@
 #!/bin/sh
 set -e
-. "$(dirname "$0")/common"
+script_dir=$(dirname "$0")
+. "$script_dir/common"
 
 # Do not delete anything on upgrade or when the user chooses to keep data.
 [ "${SYNOPKG_PKG_STATUS:-}" = UNINSTALL ] && [ "${wizard_delete_data:-}" = true ] || exit 0
-[ ! -L "$PKG_VAR/share.path" ] || report_error 'DPanel 共享目录记录无效。'
+[ ! -L "$PKG_VAR/share.path" ] || report_error "$invalidShareRecord"
 share_path=$(shared_folder_path) || share_path=
 if [ -z "$share_path" ] && [ -f "$PKG_VAR/share.path" ]; then
     IFS= read -r share_path < "$PKG_VAR/share.path"
@@ -13,7 +14,7 @@ if [ -n "$share_path" ]; then
     # The link may be gone after DSM releases the resource; only accept its
     # saved canonical path if it still names a DSM volume's dpanel share.
     if ! printf '%s\n' "$share_path" | grep -Eq '^/volume[0-9]+/dpanel$' || [ -L "$share_path" ]; then
-        report_error '无法安全确认 DPanel 共享目录，未删除数据。'
+        report_error "$unsafeShare"
     fi
     if [ ! -L "$share_path/data" ] && [ -f "$share_path/data/.dpanel-managed" ]; then
         rm -rf -- "$share_path/data"

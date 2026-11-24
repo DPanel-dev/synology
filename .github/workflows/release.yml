@@ -69,8 +69,21 @@ jobs:
             checksum=$(tar -xOf "$spk" package.tgz | md5sum | cut -d ' ' -f 1)
             grep -Fxq "checksum=\"$checksum\"" <<< "$info"
             tar -tf "$spk" scripts/{preinst,postinst,preupgrade,postupgrade,postuninst,start-stop-status} \
-              conf/{privilege,resource} WIZARD_UIFILES/install_uifile >/dev/null
-            tar -xOf "$spk" package.tgz | tar -tzf - ./server/{dpanel,service.sh} ./ui/config >/dev/null
+              conf/{privilege,resource} WIZARD_UIFILES/{install,uninstall}_uifile.sh \
+              scripts/locales/{en-US,zh-CN}.sh >/dev/null
+            tar -xOf "$spk" package.tgz | tar -tzf - ./server/{dpanel,service.sh} ./ui/{config,config.js,index.html,locales/en-US.json,locales/zh-CN.json} >/dev/null
+            # Reproduce DSM's preinstall staging: no installed package, no jq on PATH.
+            wizard_dir="$RUNNER_TEMP/wizard-$cpu"
+            mkdir -p "$wizard_dir/bin"
+            ln -s "$(command -v awk)" "$wizard_dir/bin/awk"
+            tar -xf "$spk" -C "$wizard_dir" WIZARD_UIFILES
+            for action in install uninstall; do
+              for language in chs enu; do
+                env -i PATH="$wizard_dir/bin" SYNOPKG_DSM_LANGUAGE="$language" SYNOPKG_TEMP_LOGFILE="$wizard_dir/out.json" \
+                  "$wizard_dir/WIZARD_UIFILES/${action}_uifile.sh"
+                node -e 'const steps = JSON.parse(require("fs").readFileSync(process.argv[1])); if (!steps[0]?.step_title || JSON.stringify(steps).includes("${")) process.exit(1)' "$wizard_dir/out.json"
+              done
+            done
           done
           (cd dist && sha256sum dpanel-amd64.spk dpanel-arm64.spk > SHA256SUMS)
 

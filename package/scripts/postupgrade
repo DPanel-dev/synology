@@ -1,8 +1,9 @@
 #!/bin/sh
 set -e
-. "$(dirname "$0")/common"
+script_dir=$(dirname "$0")
+. "$script_dir/common"
 
 backup="$PKG_VAR/.upgrade.env"
-[ ! -L "$backup" ] && [ -f "$backup" ] || report_error '无法恢复 DPanel 的 .env：缺少升级备份。'
-[ ! -L "$ENV_FILE" ] && [ ! -d "$ENV_FILE" ] || report_error 'DPanel 配置文件路径无效。'
+[ ! -L "$backup" ] && [ -f "$backup" ] || report_error "$missingBackup"
+[ ! -L "$ENV_FILE" ] && [ ! -d "$ENV_FILE" ] || report_error "$invalidConfigPath"
 mv -f -- "$backup" "$ENV_FILE"

@@ -1,0 +1,4 @@
+{
+  "portUnavailable": "未获取到 DPanel 端口，请在套件中心确认 DPanel 已运行。",
+  "openLink": "打开 DPanel（{host}）"
+}

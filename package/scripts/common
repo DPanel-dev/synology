@@ -13,6 +13,11 @@ PID_FILE="$PKG_VAR/app.pid"
 ENV_FILE="$PKG_DEST/server/.env"
 DPANEL_BIN="$PKG_DEST/server/dpanel"
 
+case "${SYNOPKG_DSM_LANGUAGE:-}" in
+    chs) . "$script_dir/locales/zh-CN.sh" ;;
+    *)   . "$script_dir/locales/en-US.sh" ;;
+esac
+
 report_error() {
     printf '%s\n' "$1" >&2
     if [ -n "${SYNOPKG_TEMP_LOGFILE:-}" ]; then
@@ -67,4 +72,16 @@ shared_folder_path() {
 
 log_msg() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "$LOG_FILE"
+}
+
+print_docker_access_help() {
+    printf '%s\n' "$dockerAccessHelp"
+    cat <<'HELP'
+sudo sh -c 'chgrp dpanel /var/run/docker.sock && chmod 660 /var/run/docker.sock'
+
+HELP
+    printf '%s\n' "$dockerUserHelp"
+    cat <<'HELP'
+sudo /usr/syno/sbin/synogroup --memberadd dpanel "$(id -un)"
+HELP
 }

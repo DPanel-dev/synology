@@ -4,7 +4,7 @@ DPanel 社区版的群晖 `.spk` 套件。使用 DPanel 上游为群晖编译的
 
 ## 打包和发布
 
-本地打包不需要传版本号。在 `package/` 中准备好两项输入：
+本地打包不需要 Python、Node 或 jq。打包不需要传版本号。在 `package/` 中准备好两项输入：
 
 1. 将上游的 `dpanel-synology-amd64` 或 `dpanel-synology-arm64` 放到 `app/server/dpanel`。打包时会自动将包内 `server/dpanel` 的权限设为 `0755`，不修改源文件权限。
 2. 手动编辑 `INFO`：把 `version` 填为实际套件版本，把 `arch` 填为与二进制匹配的 `x86_64` 或 `armv8`。
@@ -30,6 +30,10 @@ GitHub Actions 自动完成相同的准备工作：按上游标签下载并核�
 
 ## 安装与访问
 
+同一个 SPK 支持简体中文和英文：套件简介和安装、卸载向导随 DSM 显示语言切换，其他语言默认显示英文。桌面跳转页按浏览器语言显示，不改变 DPanel 面板内的语言设置。
+
+语言文件统一放在 `package/locales/`。桌面入口读取 `en-US.json` 或 `zh-CN.json`；套件脚本直接读取同名 `.sh` 的变量。安装、卸载各维护一份 `WIZARD_UIFILES/*_uifile.sh`。打包时将两种语言的变量附在各自入口内，避免首次安装依赖尚不存在的套件目录。向导运行时按 DSM 语言选变量，用系统 `awk` 转义变量并输出 JSON（不依赖 `jq`），不在打包时生成中英文向导。套件中心简介使用 `INFO` 的 `description` 和 `description_chs`。
+
 1. 在 **套件中心 → 手动安装** 选择对应架构的 SPK，阅读并同意 DPanel《服务条款》。
 2. 设置应用端口（默认 `8086`），管理员用户名默认 `admin`，密码可留空。新安装填了密码会尝试初始化管理员；留空则在网页中创建。升级或保留数据重装不会重置已有账号。
 3. 确认套件已运行，在浏览器打开 `http://NAS地址:端口`（例如 `http://172.16.1.223:8086`）。DSM 桌面图标也指向这个 HTTP 服务。无需配置反向代理，当前不支持 DSM 一键登录。
@@ -43,11 +47,13 @@ DSM 创建名为 `dpanel` 的共享文件夹。实际存储卷由 DSM 决定，�
 | 内容 | 路径 |
 | --- | --- |
 | 数据（数据库、应用配置等） | `/var/packages/dpanel/shares/dpanel/data/` |
-| 启动日志（DSM 版本、架构、运行账户、路径、端口、PID 和进程输出） | `/var/packages/dpanel/shares/dpanel/run.log` |
+| 启动日志（系统与套件信息、启动命令、环境变量、PID 和进程输出） | `/var/packages/dpanel/shares/dpanel/run.log` |
 | DPanel 应用日志 | `/var/packages/dpanel/shares/dpanel/data/logs/dpanel.log` |
 | 运行参数 | `/var/packages/dpanel/target/server/.env`，与主程序同目录的普通文件 |
 | 共享目录路径记录（供卸载使用） | `/var/packages/dpanel/var/share.path` |
 | 进程 PID | `/var/packages/dpanel/var/app.pid` |
+
+每次启动时，`run.log` 按 `System`、`Package`、`Environment` 分组记录。环境变量取自加载 `.env` 并进入数据目录后的启动环境，不是 `.env` 文件的副本。已知的诊断字段显示值；代理、未知变量和含控制字符的值只显示 `[redacted]`。分享日志前请检查主机名、账户和本机路径。
 
 修改 `.env` 里的 `APP_SERVER_PORT` 后重启套件生效。`.env` 按 `KEY=VALUE` 读取，不执行 Shell 代码；安装向导填的密码不会写入该文件。不要把 `dpanel` 共享目录的写权限授予不可信用户。
 

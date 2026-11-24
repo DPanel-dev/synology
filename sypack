@@ -58,15 +58,38 @@ done
 unsupported_path=$(find app "${outer[@]}" ! \( -type f -o -type d \) -print -quit)
 [[ -z $unsupported_path ]] || fail "Unsupported package entry: $unsupported_path"
 cp -R app "$work/app"
+cp -R "${outer[@]}" "$work/spk/"
 if [[ $name == dpanel ]]; then
     [[ -f $work/app/server/dpanel ]] || fail 'Expected the DPanel binary at app/server/dpanel.'
     chmod 0755 "$work/app/server/dpanel"
+    [[ ! -L locales && -d locales ]] || fail 'Expected a locales directory.'
+    mkdir "$work/spk/scripts/locales" "$work/app/ui/locales"
+    for language in en-US zh-CN; do
+        for ext in sh json; do
+            catalog="locales/$language.$ext"
+            [[ -f $catalog && ! -L $catalog ]] || fail "Expected regular locale file: $catalog"
+        done
+        cp "locales/$language.sh" "$work/spk/scripts/locales/"
+        cp "locales/$language.json" "$work/app/ui/locales/"
+    done
+    # DSM may stage only the wizard entry point before the package is installed.
+    for action in install uninstall; do
+        entry=WIZARD_UIFILES/${action}_uifile.sh
+        {
+            printf '%s\n' '#!/bin/sh' 'set -a' 'case "${SYNOPKG_DSM_LANGUAGE:-}" in' 'chs)'
+            cat locales/zh-CN.sh
+            printf '%s\n' ';;' '*)'
+            cat locales/en-US.sh
+            printf '%s\n' ';;' 'esac' 'set +a'
+            cat wizard.sh
+            sed '1d' "$entry"
+        } > "$work/spk/$entry"
+    done
 fi
-cp -R "${outer[@]}" "$work/spk/"
 write_archive "$work/app" . | gzip -n > "$work/spk/package.tgz"
 checksum=$("${md5_command[@]}" < "$work/spk/package.tgz" | cut -d ' ' -f 1)
 # The checksum describes the compressed payload, not the source directory.
-awk -v sum="$checksum" '!/^checksum=/; END { print "checksum=\"" sum "\"" }' INFO > "$work/INFO"
+awk -v sum="$checksum" '!/^checksum=/; END { print "checksum=\"" sum "\"" }' "$work/spk/INFO" > "$work/INFO"
 mv -f "$work/INFO" "$work/spk/INFO"
 write_archive "$work/spk" "${outer[@]}" package.tgz > "$work/package.spk"
 output=$output_dir/$name.spk

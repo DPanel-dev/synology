@@ -1,13 +1,14 @@
 #!/bin/sh
-. "$(dirname "$0")/common"
+script_dir=$(dirname "$0")
+. "$script_dir/common"
 
 [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] || exit 0
-[ "${wizard_agree_terms:-}" = true ] || { report_error '请先阅读并同意 DPanel 服务条款。'; exit 1; }
-valid_port "${DP_APP_SERVER_PORT:-8086}" || { report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'; exit 1; }
+[ "${wizard_agree_terms:-}" = true ] || { report_error "$acceptTerms"; exit 1; }
+valid_port "${DP_APP_SERVER_PORT:-8086}" || { report_error "$invalidPort"; exit 1; }
 case "${DP_INIT_USERNAME:-admin}" in
-    __public__|*[!a-zA-Z0-9_]*) report_error '管理员用户名无效。'; exit 1 ;;
+    __public__|*[!a-zA-Z0-9_]*) report_error "$invalidUsername"; exit 1 ;;
 esac
 if [ -n "${DP_INIT_PASSWORD:-}" ] && [ "${#DP_INIT_PASSWORD}" -lt 6 ]; then
-    report_error '管理员密码不能少于 6 位。'
+    report_error "$passwordTooShort"
     exit 1
 fi

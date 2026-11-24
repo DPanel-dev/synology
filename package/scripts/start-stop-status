@@ -1,5 +1,6 @@
 #!/bin/sh
-. "$(dirname "$0")/common"
+script_dir=$(dirname "$0")
+. "$script_dir/common"
 
 prepare_data() {
     [ ! -L "$DATA_DIR" ] && [ ! -L "$LOG_FILE" ] || return 1
@@ -22,7 +23,7 @@ prepare_data() {
         fi
     else
         if [ -d "$DATA_DIR" ] && [ ! -f "$DATA_DIR/.dpanel-managed" ] && [ ! -f "$DATA_DIR/dpanel.db" ]; then
-            report_error '共享目录里的 data 不是可识别的 DPanel 数据目录，未修改。'
+            report_error "$unknownData"
             return 1
         fi
         mkdir -p "$DATA_DIR" && touch "$DATA_DIR/.dpanel-managed" || return 1
@@ -30,41 +31,76 @@ prepare_data() {
     touch "$LOG_FILE"
 }
 
+log_start_environment() {
+    log_msg '============== Environment =============='
+    # Inspect exported entries, not lines from `env`: a multiline secret is one value.
+    # DSM can supply additional wizard fields; unknown values must stay private.
+    awk 'BEGIN {
+        for (name in ENVIRON) {
+            if (name !~ /^[A-Za-z_][A-Za-z0-9_]*$/) continue
+            value = "[redacted]"
+            if (name ~ /^(APP_NAME|APP_SERVER_HOST|APP_SERVER_PORT|APP_ENV|APP_FAMILY|APP_DEV|DP_SYSTEM_STORAGE_LOCAL_PATH|DP_LOG_CONSOLE_LEVEL|DP_LOG_FILE_LEVEL)$/ ||
+                name ~ /^(HOME|PATH|PWD|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_ALL|LC_CTYPE|LC_MESSAGES|TZ|TMPDIR)$/ ||
+                name ~ /^SYNOPKG_(DSM_ARCH|DSM_VERSION_MAJOR|DSM_VERSION_MINOR|DSM_VERSION_BUILD|DSM_LANGUAGE|PKGNAME|PKGVER|PKG_STATUS|PKGDEST|PKGDEST_VOL|PKGVAR|PKGETC|PKGTMP|PKGHOME|PKGPORT|TEMP_LOGFILE|TEMP_UPGRADE_FOLDER|OLD_PKGVER)$/) {
+                if (ENVIRON[name] !~ /[[:cntrl:]]/) value = ENVIRON[name]
+            }
+            print name "=" value
+        }
+    }' | LC_ALL=C sort >> "$LOG_FILE"
+}
+
 start_server() {
     if [ -f "$PID_FILE" ] && owned_pid; then
         return 0
     fi
     umask 077
-    [ -x "$DPANEL_BIN" ] || { report_error '找不到可执行的 DPanel 二进制。'; return 1; }
-    load_env || { report_error 'DPanel 的 .env 无效。'; return 1; }
-    share_path=$(shared_folder_path) || { report_error 'DSM 未挂载 dpanel 共享目录，请检查套件资源及共享文件夹权限。'; return 1; }
-    prepare_data || { report_error '无法准备 DPanel 共享数据目录。'; return 1; }
+    [ -x "$DPANEL_BIN" ] || { report_error "$executableMissing"; return 1; }
+    load_env || { report_error "$invalidEnv"; return 1; }
+    share_path=$(shared_folder_path) || { report_error "$shareNotMounted"; return 1; }
+    prepare_data || { report_error "$prepareDataFailed"; return 1; }
     [ ! -L "$PKG_VAR/share.path" ] || return 1
     printf '%s\n' "$share_path" > "$PKG_VAR/share.path" || return 1
 
-    log_msg '============== System / Package =============='
+    log_msg '============== System =============='
     log_msg "DSM=${SYNOPKG_DSM_VERSION_MAJOR:-?}.${SYNOPKG_DSM_VERSION_MINOR:-?} build=${SYNOPKG_DSM_VERSION_BUILD:-?} architecture=${SYNOPKG_DSM_ARCH:-$(uname -m)} kernel=$(uname -sr)"
+    if [ -r /proc/sys/kernel/syno_hw_version ]; then
+        IFS= read -r model < /proc/sys/kernel/syno_hw_version && log_msg "Model=$model"
+    fi
+    log_msg "Hostname=$(uname -n) machine=$(uname -m)"
+    if [ -r /proc/meminfo ]; then
+        awk '/^MemTotal:/ { print "Memory total=" $2 " " $3; exit }' /proc/meminfo >> "$LOG_FILE"
+    fi
+    log_msg '============== Package =============='
     log_msg "Package=${SYNOPKG_PKGNAME:-dpanel} version=${SYNOPKG_PKGVER:-?} action=${SYNOPKG_PKG_STATUS:-boot} user=$(id -un) uid=$(id -u) gid=$(id -g)"
-    log_msg "Program=$DPANEL_BIN share=$share_path data=$DATA_DIR env=$ENV_FILE pidfile=$PID_FILE"
+    log_msg "Groups=$(id -Gn) package-root=$PKG_ROOT target=$PKG_DEST var=$PKG_VAR"
+    log_msg "Program=$DPANEL_BIN share=$share_path data=$DATA_DIR env=$ENV_FILE pidfile=$PID_FILE log=$LOG_FILE"
     log_msg "Starting HTTP on $APP_SERVER_HOST:$APP_SERVER_PORT"
     if [ -f "$PKG_VAR/init-warning" ]; then
-        log_msg 'Installer did not initialize the administrator. Create the account in the web UI.'
+        log_msg "$initWarning"
         rm -f -- "$PKG_VAR/init-warning"
     fi
     if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
-        log_msg 'DPanel does not have access to /var/run/docker.sock. Use a remote Docker endpoint or grant access explicitly.'
+        log_msg "$dockerAccessDenied"
     fi
-    if launcher=$(mktemp "$PKG_DEST/ui/.connection.XXXXXX") &&
-        printf 'window.dpanelPort = %s;\n' "$APP_SERVER_PORT" > "$launcher" &&
-        chmod 644 "$launcher" && mv -f -- "$launcher" "$PKG_DEST/ui/connection.js"; then
+    log_msg "$dockerAccessTitle"
+    print_docker_access_help >> "$LOG_FILE"
+    if ui_config=$(mktemp "$PKG_DEST/ui/.config.XXXXXX") &&
+        awk -v port="$APP_SERVER_PORT" '
+            /^window\.dpanelPort = / { $0 = "window.dpanelPort = " port ";"; count++ }
+            { print }
+            END { if (count != 1) exit 1 }
+        ' "$PKG_DEST/ui/config.js" > "$ui_config" &&
+        chmod 644 "$ui_config" && mv -f -- "$ui_config" "$PKG_DEST/ui/config.js"; then
         :
     else
-        [ -z "$launcher" ] || rm -f -- "$launcher"
-        log_msg 'Could not update the desktop shortcut. Direct HTTP access is unaffected.'
+        [ -z "$ui_config" ] || rm -f -- "$ui_config"
+        log_msg "$desktopUpdateFailed"
     fi
 
     cd "$DATA_DIR" || return 1
-    [ ! -L "$PID_FILE" ] && : > "$PID_FILE" || { report_error '无法写入 DPanel PID 文件。'; return 1; }
+    [ ! -L "$PID_FILE" ] && : > "$PID_FILE" || { report_error "$pidWriteFailed"; return 1; }
+    log_start_environment
+    log_msg "Command=$DPANEL_BIN server:start"
     nohup "$DPANEL_BIN" server:start </dev/null >> "$LOG_FILE" 2>&1 &
     pid=$!
     printf '%s\n' "$pid" > "$PID_FILE" || return 1
@@ -75,13 +111,13 @@ start_server() {
         sleep 1
         owned_pid || break
         if curl --noproxy '*' -fsS --max-time 1 -o /dev/null "http://127.0.0.1:$APP_SERVER_PORT/dpanel/ui" 2>/dev/null; then
-            log_msg 'DPanel HTTP is ready.'
+            log_msg "$httpReady"
             return 0
         fi
     done
-    log_msg 'DPanel did not become ready. Check the errors above and whether the configured port is in use.'
+    log_msg "$httpStartFailed"
     stop_server
-    report_error "DPanel HTTP 未就绪，请查看 $LOG_FILE。"
+    report_error "$httpNotReady $LOG_FILE"
 }
 
 stop_server() {
@@ -96,7 +132,7 @@ stop_server() {
             kill -KILL "$pid" 2>/dev/null || :
             sleep 1
             if owned_pid; then
-                report_error '无法停止 DPanel。'
+                report_error "$stopFailed"
                 return 1
             fi
         fi

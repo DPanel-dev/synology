@@ -4,7 +4,7 @@
       "type": "url",
       "title": "DPanel",
       "icon": "images/icon.png",
-      "url": "3rdparty/dpanel/index.html",
+      "url": "/webman/3rdparty/dpanel/index.html",
       "allUsers": false
     }
   }

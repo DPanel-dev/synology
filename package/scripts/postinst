@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
-. "$(dirname "$0")/common"
+script_dir=$(dirname "$0")
+. "$script_dir/common"
 
 # Wizard passwords live only in this hook, never in the generated environment.
 init_username=${DP_INIT_USERNAME:-admin}
@@ -9,10 +10,10 @@ unset DP_INIT_USERNAME DP_INIT_PASSWORD
 
 [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] || exit 0
 umask 077
-[ ! -L "$ENV_FILE" ] || report_error 'DPanel 配置文件不能是符号链接。'
+[ ! -L "$ENV_FILE" ] || report_error "$configSymlink"
 if [ ! -f "$ENV_FILE" ]; then
     PORT=${DP_APP_SERVER_PORT:-8086}
-    valid_port "$PORT" || report_error 'DPanel 端口必须为 1024–65535（不含前导零）。'
+    valid_port "$PORT" || report_error "$invalidPort"
     env_tmp=$(mktemp "$PKG_DEST/server/.env.XXXXXX")
     trap 'rm -f -- "$env_tmp"' EXIT
     cat > "$env_tmp" <<ENV
@@ -40,7 +41,7 @@ fi
 
 # DSM acquires the shared folder at enable time, after postinst. Bootstrap in
 # a private directory first, and import only if startup finds no existing data.
-load_env || report_error 'DPanel 的 .env 无效。'
+load_env || report_error "$invalidEnv"
 bootstrap=$(mktemp -d "$PKG_VAR/.bootstrap.XXXXXX")
 bootstrap_pid=
 stop_bootstrap() {
@@ -90,6 +91,6 @@ if [ -s "$bootstrap/data/dpanel.db" ] && printf '%s\n' "$result" |
     mv -- "$bootstrap/data" "$PKG_VAR/bootstrap"
 else
     unset result
-    printf '%s\n' 'DPanel 安装时未能初始化管理员，请首次打开网页时创建。' >&2
+    printf '%s\n' "$initWarning" >&2
     touch "$PKG_VAR/init-warning"
 fi
