@@ -7,9 +7,17 @@ fail() {
     exit 1
 }
 
-[[ ${1:-} == build && $# -le 2 ]] || fail 'Usage: sypack build [package-directory]'
+usage='Usage: sypack build [--debug] [package-directory]'
+[[ ${1:-} == build ]] || fail "$usage"
+shift
+enable_debug=false
+if [[ ${1:-} == --debug ]]; then
+    enable_debug=true
+    shift
+fi
+[[ $# -le 1 && ${1:-} != -* ]] || fail "$usage"
 output_dir=$PWD
-package_dir=${2:-.}
+package_dir=${1:-.}
 CDPATH= cd -- "$package_dir/" || fail "Cannot open package directory: $package_dir"
 [[ -f INFO && -d app ]] || fail "Expected INFO and app/ in $package_dir."
 name=$(sed -n 's/^package="\([A-Za-z0-9_][A-Za-z0-9_.-]*\)"$/\1/p' INFO)
@@ -59,7 +67,24 @@ unsupported_path=$(find app "${outer[@]}" ! \( -type f -o -type d \) -print -qui
 [[ -z $unsupported_path ]] || fail "Unsupported package entry: $unsupported_path"
 cp -R app "$work/app"
 cp -R "${outer[@]}" "$work/spk/"
+if $enable_debug && [[ $name != dpanel ]]; then fail '--debug is only supported for DPanel.'; fi
 if [[ $name == dpanel ]]; then
+    awk -v debug="$enable_debug" '
+        /^[[:space:]]*\/\/ #debug-begin[[:space:]]*$/ { if (block) exit 1; block = 1; count++; next }
+        /^[[:space:]]*\/\/ #debug-end[[:space:]]*$/   { if (!block) exit 1; block = 0; next }
+        /#debug-(begin|end)/ { exit 1 }
+        /^[[:space:]]*<script src="launch\.js"><\/script>$/ {
+            print "  <script>"
+            while ((result = getline line < "app/ui/launch.js") > 0) print line
+            if (result < 0) exit 1
+            close("app/ui/launch.js")
+            print "  </script>"
+            launch++; next
+        }
+        !block || debug == "true" { print }
+        END { if (block || !count || launch != 1) exit 1 }
+    ' app/ui/index.html > "$work/app/ui/index.html" || fail 'Invalid debug markers or launch script in app/ui/index.html.'
+    rm -- "$work/app/ui/launch.js"
     [[ -f $work/app/server/dpanel ]] || fail 'Expected the DPanel binary at app/server/dpanel.'
     chmod 0755 "$work/app/server/dpanel"
     [[ ! -L locales && -d locales ]] || fail 'Expected a locales directory.'
@@ -92,7 +117,9 @@ checksum=$("${md5_command[@]}" < "$work/spk/package.tgz" | cut -d ' ' -f 1)
 awk -v sum="$checksum" '!/^checksum=/; END { print "checksum=\"" sum "\"" }' "$work/spk/INFO" > "$work/INFO"
 mv -f "$work/INFO" "$work/spk/INFO"
 write_archive "$work/spk" "${outer[@]}" package.tgz > "$work/package.spk"
-output=$output_dir/$name.spk
+output_name=$name
+if $enable_debug; then output_name+=-debug; fi
+output=$output_dir/$output_name.spk
 [[ ! -d $output ]] || fail "Output path is a directory: $output"
 mv -f "$work/package.spk" "$output"
-printf './%s.spk\n' "$name"
+printf './%s.spk\n' "$output_name"

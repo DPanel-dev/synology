@@ -85,11 +85,7 @@ start_server() {
     log_msg "$dockerAccessTitle"
     print_docker_access_help >> "$LOG_FILE"
     if ui_config=$(mktemp "$PKG_DEST/ui/.config.XXXXXX") &&
-        awk -v port="$APP_SERVER_PORT" '
-            /^window\.dpanelPort = / { $0 = "window.dpanelPort = " port ";"; count++ }
-            { print }
-            END { if (count != 1) exit 1 }
-        ' "$PKG_DEST/ui/config.js" > "$ui_config" &&
+        printf 'window.dpanelHost = "%s";\nwindow.dpanelPort = %s;\n' "$APP_SERVER_HOST" "$APP_SERVER_PORT" > "$ui_config" &&
         chmod 644 "$ui_config" && mv -f -- "$ui_config" "$PKG_DEST/ui/config.js"; then
         :
     else

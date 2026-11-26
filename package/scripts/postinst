@@ -8,17 +8,33 @@ init_username=${DP_INIT_USERNAME:-admin}
 init_password=${DP_INIT_PASSWORD:-}
 unset DP_INIT_USERNAME DP_INIT_PASSWORD
 
+# The launcher URL and its runtime config must change together, even for a same-version reinstall.
+portal_stage=$(mktemp -d "$PKG_DEST/ui/.portal.XXXXXXXXXXXX")
+trap 'rm -rf -- "$portal_stage"' EXIT
+portal_version=${portal_stage##*.}
+for file in index.html config; do
+    sed "s/?v=[[:alnum:]]*\"/?v=$portal_version\"/" "$PKG_DEST/ui/$file" > "$portal_stage/$file"
+    chmod 644 "$portal_stage/$file"
+    mv -f -- "$portal_stage/$file" "$PKG_DEST/ui/$file"
+done
+rmdir "$portal_stage"
+trap - EXIT
+
 [ "${SYNOPKG_PKG_STATUS:-}" != UPGRADE ] || exit 0
 umask 077
 [ ! -L "$ENV_FILE" ] || report_error "$configSymlink"
 if [ ! -f "$ENV_FILE" ]; then
+    APP_SERVER_HOST=0.0.0.0
+    if [ "${wizard_listen_local:-}" = true ]; then
+        APP_SERVER_HOST=127.0.0.1
+    fi
     PORT=${DP_APP_SERVER_PORT:-8086}
     valid_port "$PORT" || report_error "$invalidPort"
     env_tmp=$(mktemp "$PKG_DEST/server/.env.XXXXXX")
     trap 'rm -f -- "$env_tmp"' EXIT
     cat > "$env_tmp" <<ENV
 APP_NAME=dpanel
-APP_SERVER_HOST=0.0.0.0
+APP_SERVER_HOST=$APP_SERVER_HOST
 APP_SERVER_PORT=$PORT
 APP_ENV=lite
 APP_FAMILY=ce
@@ -27,7 +43,7 @@ DP_SYSTEM_STORAGE_LOCAL_PATH=$DATA_DIR
 DP_LOG_CONSOLE_LEVEL=info
 DP_LOG_FILE_LEVEL=info
 INSTALLER_RELEASE=
-INSTALLER_BASE_IMAGE=debian
+INSTALLER_BASE_IMAGE=synology
 ENV
     mv -f -- "$env_tmp" "$ENV_FILE"
     trap - EXIT

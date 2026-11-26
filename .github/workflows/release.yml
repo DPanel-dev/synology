@@ -28,13 +28,18 @@ env:
 
 jobs:
   build:
+    permissions:
+      contents: write # Reserve a number on the spk-build-number branch.
+    outputs:
+      artifact: ${{ steps.number.outputs.artifact }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Build and verify SPKs
+      - name: Reserve SPK build number
+        id: number
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,7 +47,45 @@ jobs:
             echo 'Expected vX.Y.Z, vX.Y.Z.N or vX.Y.Z-N' >&2
             exit 1
           fi
-          version=${BASH_REMATCH[1]}-${BASH_REMATCH[3]:-0}
+          base=${BASH_REMATCH[1]}
+          # A workflow rerun also builds a new package. Only this counter branch is updated.
+          ref=refs/heads/spk-build-number
+          git init --bare -q "$RUNNER_TEMP/spk-counter.git"
+          cd "$RUNNER_TEMP/spk-counter.git"
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git config credential.helper '!gh auth git-credential'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          tree=$(git mktree </dev/null)
+          for attempt in {1..5}; do
+            number=49
+            parent=()
+            head=$(git ls-remote --refs origin "$ref")
+            if [[ -n $head ]]; then
+              git fetch --quiet --depth=1 origin "$ref"
+              parent=(-p FETCH_HEAD)
+              previous=$(git log -1 --format=%s FETCH_HEAD)
+              [[ $previous =~ ^SPK\ build\ ([1-9][0-9]*)$ ]] || { echo 'Invalid SPK counter' >&2; exit 1; }
+              number=$((BASH_REMATCH[1] + 1))
+            fi
+            commit=$(git commit-tree "$tree" "${parent[@]}" -m "SPK build $number" -m "Run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT")
+            if git push origin "$commit:$ref"; then
+              echo "version=$base-$number" >> "$GITHUB_OUTPUT"
+              echo "artifact=dpanel-synology-$base-$number" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Retry only if another build advanced the counter.
+            next=$(git ls-remote --refs origin "$ref")
+            [[ $next != "$head" ]] || exit 1
+          done
+          echo 'Could not reserve an SPK build number' >&2; exit 1
+
+      - name: Build and verify SPKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          version: ${{ steps.number.outputs.version }}
+        run: |
+          asset_name_list=$(gh release view --repo "$DPANEL_REPO" --json assets --jq '.assets[].name' -- "$DPANEL_TAG")
           mkdir -p dist
           for cpu in amd64 arm64; do
             case "$cpu" in
@@ -50,7 +93,11 @@ jobs:
               arm64) arch=armv8; machine=AArch64 ;;
             esac
             binary=package/app/server/dpanel
-            gh release download --repo "$DPANEL_REPO" --pattern "dpanel-synology-$cpu" \
+            asset_name=dpanel-ce-synology-$cpu
+            if ! grep -Fxq -- "$asset_name" <<< "$asset_name_list"; then
+              asset_name=dpanel-synology-$cpu
+            fi
+            gh release download --repo "$DPANEL_REPO" --pattern "$asset_name" \
               --output "$binary" --clobber -- "$DPANEL_TAG"
             header=$(LC_ALL=C readelf -h "$binary")
             grep -Eq 'Class: +ELF64$' <<< "$header"
@@ -72,6 +119,13 @@ jobs:
               conf/{privilege,resource} WIZARD_UIFILES/{install,uninstall}_uifile.sh \
               scripts/locales/{en-US,zh-CN}.sh >/dev/null
             tar -xOf "$spk" package.tgz | tar -tzf - ./server/{dpanel,service.sh} ./ui/{config,config.js,index.html,locales/en-US.json,locales/zh-CN.json} >/dev/null
+            entry=$(tar -xOf "$spk" package.tgz | tar -xzOf - ./ui/index.html)
+            grep -Fq 'function getPanelEntry(' <<< "$entry"
+            grep -Fq "url.searchParams.set('k'," <<< "$entry"
+            grep -Fq 'location.assign(url);' <<< "$entry"
+            if grep -Eq '#debug-|createElement\(.button.|report\(' <<< "$entry"; then
+              echo 'Debug UI found in release entry' >&2; exit 1
+            fi
             # Reproduce DSM's preinstall staging: no installed package, no jq on PATH.
             wizard_dir="$RUNNER_TEMP/wizard-$cpu"
             mkdir -p "$wizard_dir/bin"
@@ -89,7 +143,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dpanel-synology-${{ env.DPANEL_TAG }}
+          name: ${{ steps.number.outputs.artifact }}
           path: |
             dist/*.spk
             dist/SHA256SUMS
@@ -105,7 +159,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dpanel-synology-${{ env.DPANEL_TAG }}
+          name: ${{ needs.build.outputs.artifact }}
           path: dist
 
       - name: Publish GitHub Release

@@ -1,6 +1,6 @@
 package="dpanel"
-version="@VERSION@"
-arch="@ARCH@"
+version="1.11.3-48"
+arch="x86_64"
 os_min_ver="7.1-42661"
 displayname="DPanel"
 description="DPanel is a lightweight web UI for managing Docker and Podman containers."

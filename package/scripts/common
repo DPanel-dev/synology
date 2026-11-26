@@ -36,6 +36,7 @@ valid_port() {
 
 load_env() {
     [ ! -L "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || return 1
+    APP_SERVER_HOST=127.0.0.1
     APP_SERVER_PORT=
     # Treat .env as data, not as a shell script. Other app settings may be
     # added explicitly, but DSM paths and platform-specific auth stay fixed.
@@ -44,13 +45,14 @@ load_env() {
             ''|'#'*) ;;
             APP_SERVER_PORT|APP_ENV|APP_FAMILY|APP_DEV|DP_LOG_CONSOLE_LEVEL|DP_LOG_FILE_LEVEL|INSTALLER_RELEASE|INSTALLER_BASE_IMAGE|HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)
                 export "$key=$value" ;;
-            APP_NAME|APP_SERVER_HOST|DP_SYSTEM_STORAGE_LOCAL_PATH) ;; # Generated; not user settings.
+            APP_SERVER_HOST)
+                case "$value" in 127.0.0.1|0.0.0.0) APP_SERVER_HOST=$value ;; *) return 1 ;; esac ;;
+            APP_NAME|DP_SYSTEM_STORAGE_LOCAL_PATH) ;; # Generated; not user settings.
             *) return 1 ;;
         esac
     done < "$ENV_FILE"
     valid_port "$APP_SERVER_PORT" || return 1
     APP_NAME=dpanel
-    APP_SERVER_HOST=0.0.0.0
     DP_SYSTEM_STORAGE_LOCAL_PATH="$DATA_DIR"
     HOME="$DATA_DIR"
     PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin
@@ -77,11 +79,6 @@ log_msg() {
 print_docker_access_help() {
     printf '%s\n' "$dockerAccessHelp"
     cat <<'HELP'
-sudo sh -c 'chgrp dpanel /var/run/docker.sock && chmod 660 /var/run/docker.sock'
-
-HELP
-    printf '%s\n' "$dockerUserHelp"
-    cat <<'HELP'
-sudo /usr/syno/sbin/synogroup --memberadd dpanel "$(id -un)"
+sudo sh -c '/usr/syno/sbin/synogroup --memberadd root dpanel && /usr/syno/bin/synopkg restart dpanel'
 HELP
 }

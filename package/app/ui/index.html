@@ -1,84 +1,448 @@
 <!doctype html>
-<html lang="en">
-
+<html lang="en-US">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>DPanel</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f1f1f;
+      background: #f5f5f5;
+      color-scheme: light;
+      --portal-glow: #e6f4ff;
+      --portal-halo: #f0f5ff;
+      --portal-line: #d9d9d9;
+      --portal-surface: rgb(255 255 255 / 78%);
+      --portal-shadow: rgb(0 0 0 / 8%);
+      --portal-text: #595959;
+      --portal-divider: #e8e8e8;
+      --portal-detail: rgb(0 0 0 / 4%);
+      --portal-link: #1677ff;
+    }
+    body { margin: 0; }
+    .portal {
+      display: grid;
+      min-height: 100vh;
+      box-sizing: border-box;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(ellipse at 50% 18%, var(--portal-glow), transparent 44%),
+        radial-gradient(ellipse at 50% 42%, var(--portal-halo), transparent 52%);
+      position: relative;
+    }
+    .portal::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      background: linear-gradient(135deg, transparent 49.7%, var(--portal-line) 50%, transparent 50.3%) 16% 20% / 260px 260px no-repeat,
+        linear-gradient(135deg, transparent 49.7%, var(--portal-line) 50%, transparent 50.3%) 72% 18% / 340px 340px no-repeat;
+      opacity: .28;
+      pointer-events: none;
+    }
+    .portal-card {
+      position: relative;
+      box-sizing: border-box;
+      width: min(600px, 100%);
+      min-width: 0;
+      padding: 48px 56px;
+      border: 1px solid var(--portal-line);
+      border-radius: 8px;
+      background: var(--portal-surface);
+      box-shadow: 0 12px 32px var(--portal-shadow);
+      -webkit-backdrop-filter: blur(18px) saturate(1.08);
+      backdrop-filter: blur(18px) saturate(1.08);
+      text-align: center;
+    }
+    .portal-brand {
+      margin: 0 0 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--portal-divider);
+    }
+    .portal-brand img {
+      display: block;
+      width: min(360px, 100%);
+      height: auto;
+      margin: 0 auto;
+    }
+    #status {
+      margin: 0;
+      color: var(--portal-text);
+      text-align: left;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+    #status a {
+      color: var(--portal-link);
+      text-underline-offset: 3px;
+    }
+    .portal-proxy-guide {
+      margin-top: 20px;
+      padding: 12px 16px;
+      border: 1px solid var(--portal-divider);
+      border-radius: 6px;
+      background: var(--portal-detail);
+      color: var(--portal-text);
+      text-align: left;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+    .portal-proxy-guide h2,
+    .portal-proxy-guide h3 { margin: 0; font-size: 1rem; }
+    .portal-proxy-guide h3 {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--portal-divider);
+    }
+    .portal-proxy-guide h4 { margin: 12px 0 0; font-size: inherit; }
+    .portal-proxy-guide p { margin: 6px 0 0; }
+    .portal-proxy-guide .portal-proxy-note { font-size: .875rem; }
+    .portal-proxy-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: 4px 16px;
+      margin: 6px 0 0;
+    }
+    .portal-proxy-fields dd { margin: 0; }
+    .portal-proxy-fields .portal-proxy-copy-field {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 2px 6px;
+    }
+    .portal-proxy-value { user-select: all; }
+    .portal-proxy-copy-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .portal-proxy-refresh {
+      margin: 12px 0 0;
+      color: var(--portal-text);
+      text-align: left;
+      line-height: 1.6;
+    }
+    .portal-detail {
+      box-sizing: border-box;
+      max-height: 42vh;
+      margin: 16px 0 0;
+      padding: 12px 16px;
+      border: 1px solid var(--portal-divider);
+      border-radius: 6px;
+      background: var(--portal-detail);
+      color: var(--portal-text);
+      text-align: left;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      overflow: auto;
+      font: .8125rem/1.6 ui-monospace, monospace;
+    }
+    .portal-card button {
+      margin-top: 20px;
+      padding: 8px 16px;
+      border: 0;
+      border-radius: 6px;
+      color: white;
+      background: #0958d9;
+      font: inherit;
+      cursor: pointer;
+    }
+    .portal-card button:disabled { opacity: .65; cursor: default; }
+    .portal-card .portal-proxy-copy {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      margin: 0;
+      padding: 0;
+      border-radius: 4px;
+      color: var(--portal-link);
+      background: transparent;
+    }
+    .portal-card .portal-proxy-copy:hover { background: var(--portal-detail); }
+    .portal-proxy-copy:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+    @media (max-width: 575px) {
+      .portal { padding: 16px; }
+      .portal-card { padding: 32px 24px; }
+      .portal-brand { margin-bottom: 18px; padding-bottom: 18px; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color: #f0f0f0;
+        background: #141414;
+        color-scheme: dark;
+        --portal-glow: #111d2c;
+        --portal-halo: #171d2a;
+        --portal-line: #424242;
+        --portal-surface: rgb(31 31 31 / 78%);
+        --portal-shadow: rgb(0 0 0 / 28%);
+        --portal-text: #d9d9d9;
+        --portal-divider: #424242;
+        --portal-detail: rgb(255 255 255 / 4%);
+        --portal-link: #69b1ff;
+      }
+    }
+  </style>
 </head>
-
 <body>
-  <main>
-    <h1>DPanel</h1>
-    <form id="authorize" method="post" hidden>
-      <input type="hidden" name="SynoToken">
-    </form>
-    <p id="missing" hidden></p>
-    <p><a id="open" rel="noreferrer" hidden></a></p>
+  <main class="portal">
+    <section class="portal-card" aria-labelledby="portal-title">
+      <h1 class="portal-brand" id="portal-title">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="images/dpanel-logo-dark.png" width="763" height="279">
+          <img src="images/dpanel-logo.png" width="763" height="273" alt="DPanel">
+        </picture>
+      </h1>
+      <p id="status" role="status"></p>
+    </section>
   </main>
-  <script>alert("已打开 DPanel 测试入口，点确定后获取 SynoToken。");</script>
-  <script src="config.js"></script>
+  <template id="proxy-guide">
+    <section class="portal-proxy-guide" aria-labelledby="proxy-guide-title">
+      <h2 id="proxy-guide-title" data-message="proxyGuideTitle"></h2>
+      <p data-message="proxyGuidePath"></p>
+      <h3 data-message="proxyGuideGeneral"></h3>
+      <dl class="portal-proxy-fields">
+        <dt id="proxy-guide-name-label" data-message="proxyGuideName"></dt>
+        <dd class="portal-proxy-copy-field">
+          <span class="portal-proxy-value" data-proxy-name></span>
+          <button class="portal-proxy-copy" type="button" aria-describedby="proxy-guide-name-label"></button>
+        </dd>
+      </dl>
+      <h4 data-message="proxyGuideSource"></h4>
+      <dl class="portal-proxy-fields">
+        <dt data-message="proxyGuideProtocol"></dt>
+        <dd data-source-protocol></dd>
+        <dt data-message="proxyGuidePort"></dt>
+        <dd data-message="proxyGuideExternalPort"></dd>
+      </dl>
+      <p class="portal-proxy-note" data-message="proxyGuideSourceHTTPHint" hidden></p>
+      <h4 data-message="proxyGuideDestination"></h4>
+      <dl class="portal-proxy-fields">
+        <dt data-message="proxyGuideProtocol"></dt>
+        <dd>HTTP</dd>
+        <dt id="proxy-guide-host-label" data-message="proxyGuideHostname"></dt>
+        <dd class="portal-proxy-copy-field">
+          <span class="portal-proxy-value">127.0.0.1</span>
+          <button class="portal-proxy-copy" type="button" aria-describedby="proxy-guide-host-label"></button>
+        </dd>
+        <dt id="proxy-guide-port-label" data-message="proxyGuidePort"></dt>
+        <dd class="portal-proxy-copy-field">
+          <span class="portal-proxy-value" data-package-port></span>
+          <button class="portal-proxy-copy" type="button" aria-describedby="proxy-guide-port-label"></button>
+        </dd>
+      </dl>
+      <h3 data-message="proxyGuideCustomHeader"></h3>
+      <p data-message="proxyGuideWebSocket"></p>
+      <h3 data-message="proxyGuideAdvanced"></h3>
+      <dl class="portal-proxy-fields">
+        <dt data-message="proxyGuideReadTimeout"></dt>
+        <dd>3600</dd>
+      </dl>
+      <span class="portal-proxy-copy-status" role="status"></span>
+    </section>
+    <p class="portal-proxy-refresh" data-message="proxyGuideRefresh"></p>
+  </template>
+  <template id="proxy-copy-icon">
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2H3a1 1 0 0 0-1 1v7m4-5h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/>
+    </svg>
+  </template>
+  <script src="config.js?v=0"></script>
+  <script src="launch.js"></script>
   <script>
-    const language = /^zh(?:-|$)/i.test(navigator.language) ? 'zh-CN' : 'en-US';
+    const statusElement = document.getElementById('status');
+    const language = /^zh(?:-|$)/i.test(navigator.languages?.[0] || navigator.language) ? 'zh-CN' : 'en-US';
     document.documentElement.lang = language;
-    const port = window.dpanelPort;
-    const link = document.getElementById('open');
-    const missing = document.getElementById('missing');
-    if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
-      const url = new URL('/dpanel/api/common/user/oauth/authorize?provider=synology', window.location.href);
-      url.port = String(port);
-      link.href = new URL('/dpanel/ui/user/login', url).href;
-      link.textContent = url.host;
-      link.hidden = false;
-      fetch('/webapi/entry.cgi?api=SYNO.API.Auth&version=6&method=token', {
-        credentials: 'same-origin', cache: 'no-store', mode: 'same-origin',
-        referrerPolicy: 'same-origin',
-      })
-        .then(async response => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const result = await response.json();
-          if (result?.success !== true || !result.data) throw new Error(`DSM 错误码：${result?.error?.code ?? "未知"}`);
-          const token = result.data.synotoken;
-          if (token == null || token === '') {
-            alert('DSM 没有返回 SynoToken。');
-            // DSM can omit the token when CSRF protection is off.
-            window.location.replace(url.href);
-            return;
-          }
-          if (typeof token !== 'string') throw new Error('SynoToken 格式不正确');
-          alert(`SynoToken：${token}`);
-          const form = document.getElementById('authorize');
-          form.action = url.href;
-          form.elements.SynoToken.value = token;
-          form.submit();
-        })
-        .catch(error => {
-          alert(`未能取得 SynoToken：${error.message}`);
-          window.location.replace(link.href);
-        });
-    } else {
-      alert('DPanel 端口无效，未请求 SynoToken。');
+    let messageMap;
+
+    function message(key, valueMap = {}) {
+      return messageMap[key].replace(/\{(\w+)\}/g, (_, name) => valueMap[name]);
     }
 
-    fetch(`locales/${language}.json`)
-      .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}: locales/${language}.json`);
-        return response.json();
-      })
-      .then(desktop => {
-        if (!link.hidden) {
-          link.textContent = desktop.openLink.replace('{host}', link.host);
-        } else {
-          missing.textContent = desktop.portUnavailable;
-          missing.hidden = false;
+    function showProxyGuide(port) {
+      const guide = document.getElementById('proxy-guide').content.cloneNode(true);
+      for (const element of guide.querySelectorAll('[data-message]')) {
+        element.textContent = message(element.dataset.message);
+      }
+      const sourceProtocol = location.protocol.slice(0, -1).toUpperCase();
+      guide.querySelector('[data-proxy-name]').textContent = `DPanel ${sourceProtocol}`;
+      guide.querySelector('[data-source-protocol]').textContent = sourceProtocol;
+      guide.querySelector('.portal-proxy-note').hidden = sourceProtocol !== 'HTTP';
+      guide.querySelector('[data-package-port]').textContent = String(port);
+
+      const copyIcon = document.getElementById('proxy-copy-icon').content;
+      const copyLabel = message('proxyGuideCopy');
+      const copyStatus = guide.querySelector('.portal-proxy-copy-status');
+      for (const button of guide.querySelectorAll('.portal-proxy-copy')) {
+        button.append(copyIcon.cloneNode(true));
+        button.title = copyLabel;
+        button.setAttribute('aria-label', copyLabel);
+        const value = button.previousElementSibling;
+        const path = button.querySelector('path');
+        const copyPath = path.getAttribute('d');
+        let resetTimer;
+        button.addEventListener('click', async () => {
+          let copySuccess = false;
+          copyStatus.textContent = '';
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(value.textContent);
+              copySuccess = true;
+            } else {
+              // HTTP may not expose the Clipboard API. Leave the value selected if copying fails.
+              const selection = document.getSelection();
+              const range = document.createRange();
+              range.selectNodeContents(value);
+              selection.removeAllRanges();
+              selection.addRange(range);
+              copySuccess = document.execCommand('copy');
+              if (copySuccess) selection.removeAllRanges();
+            }
+          } catch {
+            // A browser can deny clipboard access even when it exposes the API.
+          }
+          const feedback = message(copySuccess ? 'proxyGuideCopySuccess' : 'proxyGuideCopyError');
+          button.title = feedback;
+          copyStatus.textContent = feedback;
+          path.setAttribute('d', copySuccess ? 'M3 8l3 3 7-7' : 'M8 3v6m0 3v1');
+          clearTimeout(resetTimer);
+          resetTimer = setTimeout(() => {
+            button.title = copyLabel;
+            path.setAttribute('d', copyPath);
+          }, 1800);
+        });
+      }
+      statusElement.after(guide);
+    }
+
+    // #debug-begin
+    const detailElement = document.createElement('pre');
+    detailElement.className = 'portal-detail';
+    const report = line => detailElement.append(document.createTextNode(`${line}\n`));
+    const section = title => report(`\n── ${title} ──`);
+    // #debug-end
+
+    async function queryDSM(path, headers = {}) {
+      // #debug-begin
+      report(message('debugRequest', {url: new URL(path, location.href).href}));
+      // #debug-end
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(path, { credentials: 'same-origin', mode: 'same-origin', cache: 'no-store',
+          redirect: 'error', referrerPolicy: 'same-origin', headers, signal: controller.signal });
+        // #debug-begin
+        report(message('debugHTTPStatus', {status: response.status}));
+        report(message('debugResponse'));
+        try {
+          const body = await response.clone().json();
+          report(JSON.stringify(body, function (key, value) {
+            if (path === '/webapi/entry.cgi?api=SYNO.API.Auth&version=6&method=token' &&
+                response.ok && body?.success === true && this === body.data && key === 'synotoken' &&
+                typeof value === 'string') return value;
+            return /token|cookie|password|secret|authorization|header|^(sid|api[_-]?key)$/i.test(key) && value ? message('debugRedact') : value;
+          }, 2));
+        } catch {
+          report(message('debugInvalidJSON'));
         }
-      })
-      .catch(error => {
-        missing.textContent = error.message;
-        missing.hidden = false;
+        // #debug-end
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        let result;
+        try { result = await response.json(); } catch { throw new Error(message('invalidJSON')); }
+        if (result?.success !== true) {
+          throw new Error(message('dsmError', {code: Number.isInteger(result?.error?.code) ? result.error.code : '—'}));
+        }
+        return result.data;
+      } finally { clearTimeout(timer); }
+    }
+
+    (async () => {
+      const localePath = `locales/${language}.json`;
+      const localeController = new AbortController();
+      const localeTimer = setTimeout(() => localeController.abort(), 8000);
+      try {
+        const localeResponse = await fetch(localePath, {cache: 'no-store', signal: localeController.signal});
+        if (!localeResponse.ok) throw new Error(`${localePath}: HTTP ${localeResponse.status}`);
+        messageMap = await localeResponse.json();
+      } finally { clearTimeout(localeTimer); }
+      statusElement.textContent = message('checkDSM');
+      // #debug-begin
+      statusElement.after(detailElement);
+      report(`── ${message('debugPortal')} ──`);
+      report(`DSM: ${location.origin}`);
+      // #debug-end
+      const port = getPackagePort();
+      // #debug-begin
+      report(message('debugListenAddress', {host: window.dpanelHost, port}));
+      report(message('debugMatchBackend', {port}));
+      section(message('debugToken'));
+      // #debug-end
+      const synoToken = await getSynoToken().catch(error => {
+        // #debug-begin
+        report(message('debugTokenError', {error: error.message}));
+        // #debug-end
+        return '';
       });
+      // #debug-begin
+      report(message(synoToken ? 'debugTokenReceive' : 'debugTokenMissing'));
+      section(message('debugProxyQuery'));
+      // #debug-end
+      const ruleList = await getProxyRuleList(port, synoToken).catch(error => {
+        throw new Error(message('proxyQueryError', {error: error.message}));
+      });
+      // #debug-begin
+      section(message('debugRuleMatch', {protocol: location.protocol.slice(0, -1).toUpperCase()}));
+      report(`${message('debugFilter')} (data.entries[]):\n  backend.protocol = 0\n  backend.fqdn = 127.0.0.1 / localhost\n  backend.port = ${port}`);
+      report(message('debugBackendMatchCount', {count: ruleList.length}));
+      for (const rule of ruleList) {
+        const front = rule.frontend;
+        if (front) report(`${front.protocol === 1 ? 'https' : front.protocol === 0 ? 'http' : '?'}://${front.fqdn || '*'}:${front.port} → http://${rule.backend.fqdn}:${port}`);
+      }
+      // #debug-end
+      const url = getPanelEntry(ruleList, port);
+      const token = url.hostname === location.hostname ? synoToken : '';
+      if (token) {
+        url.pathname = '/dpanel/api/common/user/oauth/authorize';
+        url.searchParams.set('provider', 'synology');
+      }
+      // #debug-begin
+      section(message('debugOpenPanel'));
+      report(token ? `${url.href}&k=${message('debugRedact')}` : url.href);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = message('openPanel');
+      detailElement.after(button);
+      statusElement.textContent = message('readyToOpen');
+      await new Promise(resolve => button.addEventListener('click', resolve, { once: true }));
+      button.disabled = true;
+      // #debug-end
+      if (token) {
+        const tokenBytes = new TextEncoder().encode(token);
+        const tokenBase64 = btoa(Array.from(tokenBytes, byte => String.fromCharCode(byte)).join(''));
+        url.searchParams.set('k', tokenBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+      }
+      statusElement.textContent = message('openPanelProgress');
+      location.assign(url);
+    })().catch(error => {
+      if (error.code === 'proxyRuleRequired') {
+        statusElement.textContent = error.message;
+        const helpLink = document.createElement('a');
+        helpLink.href = messageMap.proxyRuleHelpURL;
+        helpLink.target = '_blank';
+        helpLink.rel = 'noreferrer';
+        helpLink.textContent = message('helpLink');
+        statusElement.append(' ', helpLink);
+        showProxyGuide(error.port);
+        return;
+      }
+      statusElement.textContent = messageMap ? message('openPanelError', {error: error.message}) : error.message;
+    });
   </script>
 </body>
-
 </html>
