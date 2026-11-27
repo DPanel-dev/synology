@@ -79,6 +79,6 @@ log_msg() {
 print_docker_access_help() {
     printf '%s\n' "$dockerAccessHelp"
     cat <<'HELP'
-sudo sh -c '/usr/syno/sbin/synogroup --memberadd root dpanel && /usr/syno/bin/synopkg restart dpanel'
+sudo sh -c '/usr/syno/sbin/synogroup --memberadd "$(stat -c "%G" /var/run/docker.sock)" dpanel && /usr/syno/bin/synopkg restart dpanel'
 HELP
 }
