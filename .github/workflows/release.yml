@@ -87,16 +87,17 @@ jobs:
         run: |
           asset_name_list=$(gh release view --repo "$DPANEL_REPO" --json assets --jq '.assets[].name' -- "$DPANEL_TAG")
           mkdir -p dist
-          for cpu in amd64 arm64; do
+          for asset_name in dpanel-{ce,pe}-synology-{amd64,arm64}; do
+            if ! grep -Fxq -- "$asset_name" <<< "$asset_name_list"; then
+              echo "Missing $DPANEL_REPO release asset: $DPANEL_TAG/$asset_name" >&2
+              exit 1
+            fi
+            cpu=${asset_name##*-}
             case "$cpu" in
               amd64) arch=x86_64; machine='Advanced Micro Devices X86-64' ;;
               arm64) arch=armv8; machine=AArch64 ;;
             esac
             binary=package/app/server/dpanel
-            asset_name=dpanel-ce-synology-$cpu
-            if ! grep -Fxq -- "$asset_name" <<< "$asset_name_list"; then
-              asset_name=dpanel-synology-$cpu
-            fi
             gh release download --repo "$DPANEL_REPO" --pattern "$asset_name" \
               --output "$binary" --clobber -- "$DPANEL_TAG"
             header=$(LC_ALL=C readelf -h "$binary")
@@ -108,7 +109,7 @@ jobs:
             sed -i -e "s/^version=.*/version=\"$version\"/" -e "s/^arch=.*/arch=\"$arch\"/" package/INFO
             ./sypack build ./package
 
-            spk=dist/dpanel-$cpu.spk
+            spk=dist/${asset_name/-synology-/-}.spk
             mv dpanel.spk "$spk"
             info=$(tar -xOf "$spk" INFO)
             grep -Fxq "version=\"$version\"" <<< "$info"
@@ -127,7 +128,7 @@ jobs:
               echo 'Debug UI found in release entry' >&2; exit 1
             fi
           done
-          (cd dist && sha256sum dpanel-amd64.spk dpanel-arm64.spk > SHA256SUMS)
+          (cd dist && sha256sum dpanel-{ce,pe}-{amd64,arm64}.spk > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -150,16 +151,29 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: dist
 
-      - name: Publish GitHub Release
+      - name: Upload SPKs to the DPanel release
+        env:
+          GH_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+        working-directory: dist
+        run: |
+          : "${GH_TOKEN:?Configure MY_GITHUB_TOKEN with write access to the DPanel release}"
+          sha256sum -c SHA256SUMS
+          cp SHA256SUMS SHA256SUMS-synology
+          gh release upload "$DPANEL_TAG" dpanel-{ce,pe}-{amd64,arm64}.spk SHA256SUMS-synology \
+            --repo "$DPANEL_REPO" --clobber
+
+      - name: Publish Synology release
         env:
           GH_TOKEN: ${{ github.token }}
+        working-directory: dist
         run: |
-          (cd dist && sha256sum -c SHA256SUMS)
-          packages=(dist/dpanel-amd64.spk dist/dpanel-arm64.spk dist/SHA256SUMS)
-          if gh release view "$DPANEL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$DPANEL_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release view "$DPANEL_TAG" --repo "$DPANEL_REPO" --json body --jq .body > release-notes.md
-            gh release create "$DPANEL_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" \
-              --verify-tag --title "DPanel $DPANEL_TAG for Synology DSM" --notes-file release-notes.md
+          notes="更新记录请见 [DPanel 主仓库 $DPANEL_TAG]($GITHUB_SERVER_URL/$DPANEL_REPO/releases/tag/$DPANEL_TAG)。"
+          release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -r --arg tag "$DPANEL_TAG" '.[] | select(.tag_name == $tag) | .id')
+          if [[ -z $release_id ]]; then
+            gh release create "$DPANEL_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "DPanel $DPANEL_TAG for Synology DSM" --notes "$notes"
           fi
+          gh release upload "$DPANEL_TAG" dpanel-{ce,pe}-{amd64,arm64}.spk SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$DPANEL_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --notes "$notes"
