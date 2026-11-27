@@ -171,7 +171,7 @@ cat <<'WIZARD'
         "desc": "<strong style='color:#b42318'>${dockerCopyAdviceBeforeHelp}<a href='${helpUrl}' target='_blank' rel='noopener noreferrer' style='color:inherit;text-decoration:underline'>${dockerCopyAdviceHelp}</a>${dockerCopyAdviceAfterHelp}</strong>"
       },
       {
-        "desc": "<label for='wizard_docker_socket_command'><strong>${socketLabel}</strong></label><textarea id='wizard_docker_socket_command' readonly rows='2' style='display:block;width:100%;box-sizing:border-box'>sudo sh -c '/usr/syno/sbin/synogroup --memberadd "$(stat -c "%G" /var/run/docker.sock)" dpanel && /usr/syno/bin/synopkg restart dpanel'</textarea><small style='color:#666'>${dockerAdvice}</small>"
+        "desc": "<label for='wizard_docker_socket_command'><strong>${socketLabel}</strong></label><textarea id='wizard_docker_socket_command' readonly rows='2' style='display:block;width:100%;box-sizing:border-box'>sudo sh -c '/usr/syno/sbin/synogroup --memberadd &quot;$(stat -c &quot;%G&quot; /var/run/docker.sock)&quot; dpanel &amp;&amp; /usr/syno/bin/synopkg restart dpanel'</textarea><small style='color:#666'>${dockerAdvice}</small>"
       },
       {
         "desc": "<a href='${helpUrl}' target='_blank' rel='noopener noreferrer'>${helpLink}</a> &middot; <small style='color:#666'>${logHint}</small>"
